@@ -11,15 +11,16 @@ from typing import Callable, Optional
 import numpy as np
 import torch
 import tqdm
-from datasets.pushert import PushTStateDataset, download_dataset
 from skrl.agents.torch import Agent
-from testing.shen.diffusion_policy_state import (
-    DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
-    DiffusionPolicy,
-)
-from testing.shen.dp_models import ConditionalUnet1D, EMAModel
 from torch.utils.data import DataLoader
 
+from agents.diffusion_policy_state import (
+    DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
+    ConditionalUnet1D,
+    DiffusionPolicy,
+    EMAModel,
+)
+from datasets.pushert import PushTStateDataset, download_dataset
 from testing.envs.pushert.pushert import PushTEnv
 
 logger = logging.getLogger(__name__)
