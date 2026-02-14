@@ -17,6 +17,7 @@ dependencies = [
     "gym-pusht",
     "gymnasium>=0.28",
     "jaxlie>=1.5.0",
+    "matplotlib>=3.10.8",
     "mujoco>=3.4.0",
     "mujoco-mjx>=3.4.0",
     "numpy",
