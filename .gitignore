@@ -5,6 +5,7 @@ __pycache__/
 *.pts
 # C extensions
 *.so
+skrl/
 
 # Distribution / packaging
 .Python

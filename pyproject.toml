@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mjxsim"
+version = "0.1.0"
+description = "MuJoCo + Brax simulation utilities, datasets, and RL agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Victor Melbye Staven" }]
+dependencies = [
+    "diffusers>=0.36.0",
+    "gdown",
+    "gym>=0.26",
+    "gym-pusht",
+    "gymnasium>=0.28",
+    "jaxlie>=1.5.0",
+    "mujoco>=3.4.0",
+    "mujoco-mjx>=3.4.0",
+    "numpy",
+    "opencv-python",
+    "packaging",
+    "pandas",
+    "pillow",
+    "pygame",
+    "pymunk",
+    # "skrl @ git+https://github.com/Toni-SM/skrl.git@develop",
+    "torch",
+    "tqdm",
+    "zarr",
+]
+
+[project.optional-dependencies]
+diffusion = ["diffusers", "wandb"]
+mujoco = [
+    "absl-py",
+    "brax",
+    "dm-control",
+    "etils",
+    "flax",
+    "glfw",
+    "jax",
+    "jaxlib",
+    "jaxlie",
+    "ml-collections",
+    "mujoco",
+    "robot_descriptions",
+    "shapely",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents", "cli", "datasets", "envs", "sim", "trainers", "utils"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

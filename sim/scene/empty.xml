@@ -1,0 +1,60 @@
+<mujoco model="empty scene">
+
+    <compiler angle="radian" autolimits="true" />
+    <option timestep="0.002"
+        integrator="implicitfast"
+        solver="Newton"
+        gravity="0 0 -9.82"
+        cone="elliptic"
+        sdf_iterations="5"
+        sdf_initpoints="30"
+        noslip_iterations="2"
+    >
+        <!-- impratio="100" -->
+        <!-- mjMAXCONPAIR="10" -->
+        <flag multiccd="enable" nativeccd="enable" />
+        <!-- <flag nativeccd="enable" /> -->
+    </option>
+
+    <custom>
+        <numeric data="15" name="max_contact_points" />
+        <numeric data="15" name="max_geom_pairs" />
+    </custom>
+
+    <extension>
+        <plugin plugin="mujoco.sensor.touch_grid" />
+        <!-- <plugin plugin="mujoco.elasticity.solid" /> -->
+        <!-- <plugin plugin="mujoco.elasticity.shell" /> -->
+    </extension>
+
+    <statistic center="0.3 0 0.3" extent="0.8" meansize="0.08" />
+
+    <visual>
+        <headlight diffuse="0.6 0.6 0.6" ambient="0.1 0.1 0.1" specular="0 0 0" />
+        <rgba haze="0.15 0.25 0.35 1" />
+        <global azimuth="120" elevation="-20" offwidth="2000" offheight="2000" />
+        <!-- <global azimuth="120" elevation="-20" offwidth="1920" offheight="1080" /> -->
+
+    </visual>
+
+    <asset>
+        <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
+            height="3072" />
+        <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+            rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300" />
+        <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+            reflectance="0.2" />
+    </asset>
+
+    <worldbody>
+
+
+        <light pos="0 0 1.5" dir="0 0 -1" directional="true" />
+        <geom name="floor" size="0 0 0.5" type="plane" material="groundplane"
+            solimp="0.0 0.0 0.0 0.0 1" />
+        <!-- <geom name="floor" size="0 0 0.5" type="plane" material="groundplane" /> -->
+
+    </worldbody>
+
+
+</mujoco>

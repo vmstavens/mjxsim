@@ -78,6 +78,19 @@ def sample_sequence(
     sample_start_idx: int,
     sample_end_idx: int,
 ) -> dict:
+    """Slice a contiguous window and pad it to a fixed length.
+
+    Args:
+        train_data: Mapping of feature name to array of shape (N, ...).
+        sequence_length: Target sequence length after padding.
+        buffer_start_idx: Start index (inclusive) into the raw buffer.
+        buffer_end_idx: End index (exclusive) into the raw buffer.
+        sample_start_idx: Start index in the output window to write the slice.
+        sample_end_idx: End index in the output window to write the slice.
+
+    Returns:
+        Dict of padded sequences with length ``sequence_length`` for each key.
+    """
     result = dict()
     for key, input_arr in train_data.items():
         sample = input_arr[buffer_start_idx:buffer_end_idx]
@@ -95,8 +108,15 @@ def sample_sequence(
     return result
 
 
-# normalize data
 def get_data_stats(data: np.ndarray) -> dict:
+    """Compute per-dimension min/max statistics.
+
+    Args:
+        data: Array with last dimension representing features.
+
+    Returns:
+        Dict with ``min`` and ``max`` arrays.
+    """
     data = data.reshape(-1, data.shape[-1])
     stats = {"min": np.min(data, axis=0), "max": np.max(data, axis=0)}
     return stats
@@ -155,6 +175,18 @@ def create_sample_indices(
     pad_before: int = 0,
     pad_after: int = 0,
 ) -> np.ndarray:
+    """Build index windows for fixed-length sampling across episodes.
+
+    Args:
+        episode_ends: 1D array of end indices (exclusive) per episode.
+        sequence_length: Length of each sampled sequence.
+        pad_before: Number of timesteps to pad before episode start.
+        pad_after: Number of timesteps to pad after episode end.
+
+    Returns:
+        Array of shape (num_samples, 4) with
+        ``[buffer_start, buffer_end, sample_start, sample_end]`` rows.
+    """
     indices = list()
     for i in range(len(episode_ends)):
         start_idx = 0
@@ -182,7 +214,17 @@ def create_sample_indices(
 
 
 class PushTStateDataset(torch.utils.data.Dataset):
+    """State-only PushT dataset that yields (obs_seq, action_seq) pairs."""
+
     def __init__(self, dataset_path, pred_horizon, obs_horizon, action_horizon):
+        """Load a zipped Zarr dataset and prepare normalized sequences.
+
+        Args:
+            dataset_path: Path to the ``*.zarr.zip`` dataset.
+            pred_horizon: Number of timesteps in each prediction window.
+            obs_horizon: Number of observation timesteps to return.
+            action_horizon: Number of action timesteps used for padding.
+        """
         # read from zarr dataset
         # dataset_root = zarr.open("/content/pusht_cchi_v7_replay.zarr.zip")
         # dataset_root = zarr.open(dataset_path, 'r')
@@ -269,10 +311,12 @@ class PushTStateDataset(torch.utils.data.Dataset):
         self.obs_horizon = obs_horizon
 
     def __len__(self):
+        """Return the number of available sequence windows."""
         # all possible segments of the dataset
         return len(self.indices)
 
     def __getitem__(self, idx):
+        """Return a normalized (obs_seq, action_seq) pair for a window."""
         # get the start/end indices for this datapoint
         buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = (
             self.indices[idx]
@@ -295,4 +339,19 @@ class PushTStateDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    pass
+    dataset_path = download_dataset(verbose=True)
+    pred_horizon = 16
+    obs_horizon = 2
+    action_horizon = 8
+
+    dataset = PushTStateDataset(
+        dataset_path=dataset_path,
+        pred_horizon=pred_horizon,
+        obs_horizon=obs_horizon,
+        action_horizon=action_horizon,
+    )
+
+    obs_seq, action_seq = dataset[0]
+    print(f"Loaded PushT dataset with {len(dataset)} samples")
+    print(f"obs_seq shape: {obs_seq.shape}")
+    print(f"action_seq shape: {action_seq.shape}")
