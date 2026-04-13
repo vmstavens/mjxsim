@@ -3,10 +3,15 @@
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-from .datahandler import DataHandler
-from .datasets import split_dataset
-
 __all__ = ["DataHandler", "split_dataset", "mk_env"]
+
+
+def __getattr__(name):
+    if name == "DataHandler":
+        return import_module("utils.datahandler").DataHandler
+    if name == "split_dataset":
+        return import_module("utils.datasets").split_dataset
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def mk_env(*args, **kwargs):
@@ -21,4 +26,6 @@ def mk_env(*args, **kwargs):
 
 
 if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
+    from utils.datahandler import DataHandler
+    from utils.datasets import split_dataset
     from utils.envs import mk_env
