@@ -1,7 +1,6 @@
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Union
 
-import jax
 import jax.numpy as jp
 import jaxlie as jaxl
 import mujoco.mjx as mjx

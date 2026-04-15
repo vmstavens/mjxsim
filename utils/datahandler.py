@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-
-from skrl.skrl.memories.torch import RandomMemory
+from skrl.memories.torch import RandomMemory
 
 
 class DataHandler(pd.DataFrame):

@@ -1,17 +1,109 @@
 import copy
+import dataclasses
+import inspect
 import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import torch
 import tqdm
 from skrl.agents.torch import Agent
 from skrl.envs.wrappers.torch import Wrapper
-from skrl.trainers.torch import Trainer
-from skrl.trainers.torch.sequential import SEQUENTIAL_TRAINER_DEFAULT_CONFIG
+from skrl.trainers.torch import SequentialTrainerCfg, Trainer
+
+
+@dataclasses.dataclass(kw_only=True)
+class SequentialTrainerPlusCfg(SequentialTrainerCfg):
+    """Configuration for SequentialTrainerPlus."""
+
+    rollout_video_every_episodes: int = 0
+    rollout_video_num_steps: int = 1000
+    rollout_video_fps: int = 30
+    rollout_video_dir: str | None = None
+    rollout_video_prefix: str = "rollout"
+    rollout_video_env_index: int = 0
+    rollout_video_count_all_envs: bool = False
+    rollout_video_disable_tracking: bool = True
+    eval_env: Any = None
+    log_rollout_path: str | None = None
+    log_rollout_steps: int = 0
+    log_rollout_exit: bool = False
+
+
+def _coerce_sequential_trainer_plus_cfg(
+    cfg: SequentialTrainerPlusCfg | dict | None,
+) -> SequentialTrainerPlusCfg:
+    if cfg is None:
+        return SequentialTrainerPlusCfg()
+    if isinstance(cfg, SequentialTrainerPlusCfg):
+        return copy.deepcopy(cfg)
+    if isinstance(cfg, dict):
+        return SequentialTrainerPlusCfg(**copy.deepcopy(cfg))
+    raise TypeError(
+        "cfg must be a SequentialTrainerPlusCfg, dict, or None "
+        f"(got {type(cfg).__name__})"
+    )
+
+
+def _call_agent_method(agent, method_name: str, **kwargs):
+    method = getattr(agent, method_name)
+    signature = inspect.signature(method)
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return method(**kwargs)
+    filtered = {
+        key: value for key, value in kwargs.items() if key in signature.parameters
+    }
+    return method(**filtered)
+
+
+def _agent_act(agent, observations, states=None, *, timestep: int, timesteps: int):
+    signature = inspect.signature(agent.act)
+    if "observations" in signature.parameters:
+        return agent.act(
+            observations,
+            states,
+            timestep=timestep,
+            timesteps=timesteps,
+        )
+    return agent.act(observations, timestep=timestep, timesteps=timesteps)
+
+
+def _record_transition(
+    agent,
+    *,
+    observations,
+    actions,
+    rewards,
+    next_observations,
+    terminated,
+    truncated,
+    infos,
+    timestep: int,
+    timesteps: int,
+    states=None,
+    next_states=None,
+):
+    return _call_agent_method(
+        agent,
+        "record_transition",
+        observations=observations,
+        states=states if states is not None else observations,
+        actions=actions,
+        rewards=rewards,
+        next_observations=next_observations,
+        next_states=next_states if next_states is not None else next_observations,
+        terminated=terminated,
+        truncated=truncated,
+        infos=infos,
+        timestep=timestep,
+        timesteps=timesteps,
+    )
 
 
 class SequentialTrainerPlus(Trainer):
@@ -27,38 +119,36 @@ class SequentialTrainerPlus(Trainer):
         env: Wrapper,
         agents: Union[Agent, List[Agent]],
         agents_scope: Optional[List[int]] = None,
-        cfg: Optional[dict] = None,
+        scopes: Optional[List[int]] = None,
+        cfg: Optional[SequentialTrainerPlusCfg | dict] = None,
     ) -> None:
-        _cfg = copy.deepcopy(SEQUENTIAL_TRAINER_DEFAULT_CONFIG)
-        _cfg.update(cfg if cfg is not None else {})
-        agents_scope = agents_scope if agents_scope is not None else []
-        super().__init__(env=env, agents=agents, agents_scope=agents_scope, cfg=_cfg)
+        _cfg = _coerce_sequential_trainer_plus_cfg(cfg)
+        scopes = scopes if scopes is not None else agents_scope
+        scopes = scopes if scopes is not None else []
+        super().__init__(env=env, agents=agents, scopes=scopes, cfg=_cfg)
 
-        self.rollout_video_every_episodes = self.cfg.get(
-            "rollout_video_every_episodes", 0
-        )
-        self.rollout_video_num_steps = self.cfg.get("rollout_video_num_steps", 1000)
-        self.rollout_video_fps = self.cfg.get("rollout_video_fps", 30)
-        self.rollout_video_dir = self.cfg.get("rollout_video_dir")
-        self.rollout_video_prefix = self.cfg.get("rollout_video_prefix", "rollout")
-        self.rollout_video_env_index = int(
-            self.cfg.get("rollout_video_env_index", 0) or 0
-        )
+        self.rollout_video_every_episodes = self.cfg.rollout_video_every_episodes
+        self.rollout_video_num_steps = self.cfg.rollout_video_num_steps
+        self.rollout_video_fps = self.cfg.rollout_video_fps
+        self.rollout_video_dir = self.cfg.rollout_video_dir
+        self.rollout_video_prefix = self.cfg.rollout_video_prefix
+        self.rollout_video_env_index = int(self.cfg.rollout_video_env_index or 0)
         self.rollout_video_count_all_envs = bool(
-            self.cfg.get("rollout_video_count_all_envs", False)
+            self.cfg.rollout_video_count_all_envs
         )
         self.rollout_video_disable_tracking = bool(
-            self.cfg.get("rollout_video_disable_tracking", True)
+            self.cfg.rollout_video_disable_tracking
         )
+        self.eval_env = self.cfg.eval_env
         self._episode_count = 0
         self._next_rollout_episode = (
             self.rollout_video_every_episodes
             if self.rollout_video_every_episodes
             else None
         )
-        self.log_rollout_path = self.cfg.get("log_rollout_path")
-        self.log_rollout_steps = int(self.cfg.get("log_rollout_steps", 0) or 0)
-        self.log_rollout_exit = bool(self.cfg.get("log_rollout_exit", False))
+        self.log_rollout_path = self.cfg.log_rollout_path
+        self.log_rollout_steps = int(self.cfg.log_rollout_steps or 0)
+        self.log_rollout_exit = bool(self.cfg.log_rollout_exit)
         self._rollout_log = {"states": [], "actions": []}
         self._rollout_log_saved = False
 
@@ -111,13 +201,20 @@ class SequentialTrainerPlus(Trainer):
             if entry["write_tracking_data"] is not None:
                 agent.write_tracking_data = entry["write_tracking_data"]
 
+    @staticmethod
+    def _set_agent_mode(agent, mode: str) -> None:
+        if hasattr(agent, "set_running_mode"):
+            agent.set_running_mode(mode)
+        elif hasattr(agent, "enable_training_mode"):
+            agent.enable_training_mode(mode == "train")
+
     def train(self) -> None:
         # set running mode
         if self.num_simultaneous_agents > 1:
             for agent in self.agents:
-                agent.set_running_mode("train")
+                self._set_agent_mode(agent, "train")
         else:
-            self.agents.set_running_mode("train")
+            self._set_agent_mode(self.agents, "train")
 
         # non-simultaneous agents reuse overridden helpers
         if self.num_simultaneous_agents == 1:
@@ -130,24 +227,30 @@ class SequentialTrainerPlus(Trainer):
         # reset env
         states, infos = self.env.reset()
         for timestep in tqdm.tqdm(
-            range(self.initial_timestep, self.timesteps),
-            disable=self.disable_progressbar,
+            range(0, self.cfg.timesteps),
+            disable=self.cfg.disable_progressbar,
             file=sys.stdout,
         ):
             # pre-interaction
             for agent in self.agents:
-                agent.pre_interaction(timestep=timestep, timesteps=self.timesteps)
+                _call_agent_method(
+                    agent,
+                    "pre_interaction",
+                    timestep=timestep,
+                    timesteps=self.cfg.timesteps,
+                )
 
             with torch.no_grad():
                 # compute actions
                 actions = torch.vstack(
                     [
-                        agent.act(
+                        _agent_act(
+                            agent,
                             states[scope[0] : scope[1]],
                             timestep=timestep,
-                            timesteps=self.timesteps,
+                            timesteps=self.cfg.timesteps,
                         )[0]
-                        for agent, scope in zip(self.agents, self.agents_scope)
+                        for agent, scope in zip(self.agents, self.scopes)
                     ]
                 )
 
@@ -160,34 +263,39 @@ class SequentialTrainerPlus(Trainer):
                 )
 
                 # render scene
-                if not self.headless:
+                if not self.cfg.headless:
                     self.env.render()
 
                 # record the environments' transitions
-                for agent, scope in zip(self.agents, self.agents_scope):
-                    agent.record_transition(
-                        states=states[scope[0] : scope[1]],
+                for agent, scope in zip(self.agents, self.scopes):
+                    _record_transition(
+                        agent,
+                        observations=states[scope[0] : scope[1]],
                         actions=actions[scope[0] : scope[1]],
                         rewards=rewards[scope[0] : scope[1]],
-                        next_states=next_states[scope[0] : scope[1]],
+                        next_observations=next_states[scope[0] : scope[1]],
                         terminated=terminated[scope[0] : scope[1]],
                         truncated=truncated[scope[0] : scope[1]],
                         infos=infos,
                         timestep=timestep,
-                        timesteps=self.timesteps,
+                        timesteps=self.cfg.timesteps,
                     )
 
                 # log environment info
-                if self.environment_info in infos:
-                    for k, v in infos[self.environment_info].items():
+                if self.cfg.environment_info in infos:
+                    for k, v in infos[self.cfg.environment_info].items():
                         if isinstance(v, torch.Tensor) and v.numel() == 1:
                             for agent in self.agents:
                                 agent.track_data(f"Info / {k}", v.item())
 
             # post-interaction (pass terminated for agent-specific handling)
             for agent in self.agents:
-                agent.post_interaction(
-                    terminated=terminated, timestep=timestep, timesteps=self.timesteps
+                _call_agent_method(
+                    agent,
+                    "post_interaction",
+                    terminated=terminated,
+                    timestep=timestep,
+                    timesteps=self.cfg.timesteps,
                 )
 
             # reset environments
@@ -203,9 +311,9 @@ class SequentialTrainerPlus(Trainer):
         # set running mode
         if self.num_simultaneous_agents > 1:
             for agent in self.agents:
-                agent.set_running_mode("eval")
+                self._set_agent_mode(agent, "eval")
         else:
-            self.agents.set_running_mode("eval")
+            self._set_agent_mode(self.agents, "eval")
 
         # non-simultaneous agents reuse overridden helpers
         if self.num_simultaneous_agents == 1:
@@ -218,28 +326,34 @@ class SequentialTrainerPlus(Trainer):
         states, infos = self.env.reset()
 
         for timestep in tqdm.tqdm(
-            range(self.initial_timestep, self.timesteps),
-            disable=self.disable_progressbar,
+            range(0, self.cfg.timesteps),
+            disable=self.cfg.disable_progressbar,
             file=sys.stdout,
         ):
             # pre-interaction
             for agent in self.agents:
-                agent.pre_interaction(timestep=timestep, timesteps=self.timesteps)
+                _call_agent_method(
+                    agent,
+                    "pre_interaction",
+                    timestep=timestep,
+                    timesteps=self.cfg.timesteps,
+                )
 
             with torch.no_grad():
                 # compute actions
                 outputs = [
-                    agent.act(
+                    _agent_act(
+                        agent,
                         states[scope[0] : scope[1]],
                         timestep=timestep,
-                        timesteps=self.timesteps,
+                        timesteps=self.cfg.timesteps,
                     )
-                    for agent, scope in zip(self.agents, self.agents_scope)
+                    for agent, scope in zip(self.agents, self.scopes)
                 ]
                 actions = torch.vstack(
                     [
                         output[0]
-                        if self.stochastic_evaluation
+                        if self.cfg.stochastic_evaluation
                         else output[-1].get("mean_actions", output[0])
                         for output in outputs
                     ]
@@ -251,34 +365,39 @@ class SequentialTrainerPlus(Trainer):
                 )
 
                 # render scene
-                if not self.headless:
+                if not self.cfg.headless:
                     self.env.render()
 
                 # write data to TensorBoard
-                for agent, scope in zip(self.agents, self.agents_scope):
-                    agent.record_transition(
-                        states=states[scope[0] : scope[1]],
+                for agent, scope in zip(self.agents, self.scopes):
+                    _record_transition(
+                        agent,
+                        observations=states[scope[0] : scope[1]],
                         actions=actions[scope[0] : scope[1]],
                         rewards=rewards[scope[0] : scope[1]],
-                        next_states=next_states[scope[0] : scope[1]],
+                        next_observations=next_states[scope[0] : scope[1]],
                         terminated=terminated[scope[0] : scope[1]],
                         truncated=truncated[scope[0] : scope[1]],
                         infos=infos,
                         timestep=timestep,
-                        timesteps=self.timesteps,
+                        timesteps=self.cfg.timesteps,
                     )
 
                 # log environment info
-                if self.environment_info in infos:
-                    for k, v in infos[self.environment_info].items():
+                if self.cfg.environment_info in infos:
+                    for k, v in infos[self.cfg.environment_info].items():
                         if isinstance(v, torch.Tensor) and v.numel() == 1:
                             for agent in self.agents:
                                 agent.track_data(f"Info / {k}", v.item())
 
             # post-interaction (pass terminated for agent-specific handling)
             for agent in self.agents:
-                agent.post_interaction(
-                    terminated=terminated, timestep=timestep, timesteps=self.timesteps
+                _call_agent_method(
+                    agent,
+                    "post_interaction",
+                    terminated=terminated,
+                    timestep=timestep,
+                    timesteps=self.cfg.timesteps,
                 )
 
             if terminated.any() or truncated.any():
@@ -293,48 +412,58 @@ class SequentialTrainerPlus(Trainer):
 
         states, infos = self.env.reset()
         for timestep in tqdm.tqdm(
-            range(self.initial_timestep, self.timesteps),
-            disable=self.disable_progressbar,
+            range(0, self.cfg.timesteps),
+            disable=self.cfg.disable_progressbar,
             file=sys.stdout,
         ):
-            self.agents.pre_interaction(
-                states=states, timestep=timestep, timesteps=self.timesteps
+            _call_agent_method(
+                self.agents,
+                "pre_interaction",
+                states=states,
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
             )
 
             with torch.no_grad():
-                actions = self.agents.act(
-                    states, timestep=timestep, timesteps=self.timesteps
+                actions = _agent_act(
+                    self.agents,
+                    states, timestep=timestep, timesteps=self.cfg.timesteps
                 )[0]
                 next_states, rewards, terminated, truncated, infos = self.env.step(
                     actions
                 )
 
-                if not self.headless:
+                if not self.cfg.headless:
                     self.env.render()
 
-                self.agents.record_transition(
-                    states=states,
+                _record_transition(
+                    self.agents,
+                    observations=states,
                     actions=actions,
                     rewards=rewards,
-                    next_states=next_states,
+                    next_observations=next_states,
                     terminated=terminated,
                     truncated=truncated,
                     infos=infos,
                     timestep=timestep,
-                    timesteps=self.timesteps,
+                    timesteps=self.cfg.timesteps,
                 )
 
                 self._maybe_log_rollout(
                     states=states, actions=actions, timestep=timestep
                 )
 
-                if self.environment_info in infos:
-                    for k, v in infos[self.environment_info].items():
+                if self.cfg.environment_info in infos:
+                    for k, v in infos[self.cfg.environment_info].items():
                         if isinstance(v, torch.Tensor) and v.numel() == 1:
                             self.agents.track_data(f"Info / {k}", v.item())
 
-            self.agents.post_interaction(
-                next_states=next_states, timestep=timestep, timesteps=self.timesteps
+            _call_agent_method(
+                self.agents,
+                "post_interaction",
+                next_states=next_states,
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
             )
 
             episode_ends = (terminated | truncated).view(-1)
@@ -346,6 +475,15 @@ class SequentialTrainerPlus(Trainer):
             else:
                 ended_count = int(episode_ends.sum().item())
             if ended_count:
+                if self.rollout_video_every_episodes:
+                    print(
+                        f"[rollout] ended_count={ended_count} "
+                        f"episode_count={self._episode_count} "
+                        f"next_rollout_episode={self._next_rollout_episode} "
+                        f"every={self.rollout_video_every_episodes} "
+                        f"count_all_envs={self.rollout_video_count_all_envs} "
+                        f"envs={getattr(self.env, 'num_envs', 1)}"
+                    )
                 self._episode_count += ended_count
                 self._maybe_record_rollout()
 
@@ -366,19 +504,25 @@ class SequentialTrainerPlus(Trainer):
 
         states, infos = self.env.reset()
         for timestep in tqdm.tqdm(
-            range(self.initial_timestep, self.timesteps),
-            disable=self.disable_progressbar,
+            range(0, self.cfg.timesteps),
+            disable=self.cfg.disable_progressbar,
             file=sys.stdout,
         ):
-            self.agents.pre_interaction(timestep=timestep, timesteps=self.timesteps)
+            _call_agent_method(
+                self.agents,
+                "pre_interaction",
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
+            )
 
             with torch.no_grad():
-                outputs = self.agents.act(
-                    states, timestep=timestep, timesteps=self.timesteps
+                outputs = _agent_act(
+                    self.agents,
+                    states, timestep=timestep, timesteps=self.cfg.timesteps
                 )
                 actions = (
                     outputs[0]
-                    if self.stochastic_evaluation
+                    if self.cfg.stochastic_evaluation
                     else outputs[-1].get("mean_actions", outputs[0])
                 )
 
@@ -386,32 +530,37 @@ class SequentialTrainerPlus(Trainer):
                     actions
                 )
 
-                if not self.headless:
+                if not self.cfg.headless:
                     self.env.render()
 
-                self.agents.record_transition(
-                    states=states,
+                _record_transition(
+                    self.agents,
+                    observations=states,
                     actions=actions,
                     rewards=rewards,
-                    next_states=next_states,
+                    next_observations=next_states,
                     terminated=terminated,
                     truncated=truncated,
                     infos=infos,
                     timestep=timestep,
-                    timesteps=self.timesteps,
+                    timesteps=self.cfg.timesteps,
                 )
 
                 self._maybe_log_rollout(
                     states=states, actions=actions, timestep=timestep
                 )
 
-                if self.environment_info in infos:
-                    for k, v in infos[self.environment_info].items():
+                if self.cfg.environment_info in infos:
+                    for k, v in infos[self.cfg.environment_info].items():
                         if isinstance(v, torch.Tensor) and v.numel() == 1:
                             self.agents.track_data(f"Info / {k}", v.item())
 
-            self.agents.post_interaction(
-                terminated=terminated, timestep=timestep, timesteps=self.timesteps
+            _call_agent_method(
+                self.agents,
+                "post_interaction",
+                terminated=terminated,
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
             )
 
             if self.env.num_envs > 1:
@@ -439,7 +588,14 @@ class SequentialTrainerPlus(Trainer):
         except ImportError:
             return
 
-        num_envs = int(getattr(self.env, "num_envs", 1) or 1)
+        rollout_env = self.eval_env or self.env
+        # Reset any per-agent state buffers that depend on batch size
+        for agent in self._iter_agents():
+            if hasattr(agent, "_states"):
+                agent._states = None
+            if hasattr(agent, "_prev_states"):
+                agent._prev_states = None
+        num_envs = int(getattr(rollout_env, "num_envs", 1) or 1)
         env_index = 0
         if num_envs > 1:
             env_index = max(0, min(self.rollout_video_env_index, num_envs - 1))
@@ -453,7 +609,7 @@ class SequentialTrainerPlus(Trainer):
 
         # print("setting ibrl to eval")
 
-        self.agents.set_running_mode("eval")
+        self._set_agent_mode(self.agents, "eval")
         self.agents.set_mode("eval")
 
         # if hasattr(self.agents, "IL_policy") and hasattr(self.agents.IL_policy, "eval"):
@@ -467,38 +623,45 @@ class SequentialTrainerPlus(Trainer):
             self.agents._gradient_steps = 0
 
         frames = []
-        rollout_log = {"states": [], "actions": []}
+        rollout_log = {"states": [], "actions": [], "time": []}
         steps = 0
         success = False
         logging_state = self._suspend_agent_logging()
         try:
             with torch.no_grad():
-                states, _ = self.env.reset()
+                states, _ = rollout_env.reset()
                 for step in tqdm.tqdm(
                     range(self.rollout_video_num_steps),
                     desc="rollout",
-                    disable=self.disable_progressbar,
+                    disable=self.cfg.disable_progressbar,
                     file=sys.stdout,
                 ):
-                    self.agents.pre_interaction(
+                    _call_agent_method(
+                        self.agents,
+                        "pre_interaction",
                         states=states,
                         timestep=step,
                         timesteps=self.rollout_video_num_steps,
                     )
-                    actions = self.agents.act(
+                    actions = _agent_act(
+                        self.agents,
                         states, timestep=step, timesteps=self.rollout_video_num_steps
                     )[0]
-                    states, _, terminated, truncated, _ = self.env.step(actions)
-                    self.agents.post_interaction(
+                    states, _, terminated, truncated, _ = rollout_env.step(actions)
+                    _call_agent_method(
+                        self.agents,
+                        "post_interaction",
                         next_states=states,
                         timestep=step,
                         timesteps=self.rollout_video_num_steps,
                     )
                     frame = None
                     try:
-                        frame = self.env.render(mode="rgb_array", env_index=env_index)
+                        frame = rollout_env.render(
+                            mode="rgb_array", env_index=env_index
+                        )
                     except TypeError:
-                        frame = self.env.render()
+                        frame = rollout_env.render()
                     if isinstance(frame, (list, tuple)):
                         frame = frame[env_index] if frame else None
                     elif isinstance(frame, np.ndarray) and frame.ndim == 4:
@@ -547,7 +710,7 @@ class SequentialTrainerPlus(Trainer):
             self._restore_agent_logging(logging_state)
 
         self.agents.set_mode("train")
-        self.agents.set_running_mode("train")
+        self._set_agent_mode(self.agents, "train")
         if orig_learning_starts is not None:
             self.agents._learning_starts = orig_learning_starts
         if orig_gradient_steps is not None:
@@ -600,15 +763,21 @@ class SequentialTrainerPlus(Trainer):
         shared_states = self.env.state()
 
         for timestep in tqdm.tqdm(
-            range(self.initial_timestep, self.timesteps),
-            disable=self.disable_progressbar,
+            range(0, self.cfg.timesteps),
+            disable=self.cfg.disable_progressbar,
             file=sys.stdout,
         ):
-            self.agents.pre_interaction(timestep=timestep, timesteps=self.timesteps)
+            _call_agent_method(
+                self.agents,
+                "pre_interaction",
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
+            )
 
             with torch.no_grad():
-                actions = self.agents.act(
-                    states, timestep=timestep, timesteps=self.timesteps
+                actions = _agent_act(
+                    self.agents,
+                    states, timestep=timestep, timesteps=self.cfg.timesteps
                 )[0]
 
                 next_states, rewards, terminated, truncated, infos = self.env.step(
@@ -618,28 +787,35 @@ class SequentialTrainerPlus(Trainer):
                 infos["shared_states"] = shared_states
                 infos["shared_next_states"] = shared_next_states
 
-                if not self.headless:
+                if not self.cfg.headless:
                     self.env.render()
 
-                self.agents.record_transition(
-                    states=states,
+                _record_transition(
+                    self.agents,
+                    observations=states,
+                    states=shared_states,
                     actions=actions,
                     rewards=rewards,
-                    next_states=next_states,
+                    next_observations=next_states,
+                    next_states=shared_next_states,
                     terminated=terminated,
                     truncated=truncated,
                     infos=infos,
                     timestep=timestep,
-                    timesteps=self.timesteps,
+                    timesteps=self.cfg.timesteps,
                 )
 
-                if self.environment_info in infos:
-                    for k, v in infos[self.environment_info].items():
+                if self.cfg.environment_info in infos:
+                    for k, v in infos[self.cfg.environment_info].items():
                         if isinstance(v, torch.Tensor) and v.numel() == 1:
                             self.agents.track_data(f"Info / {k}", v.item())
 
-            self.agents.post_interaction(
-                terminated=terminated, timestep=timestep, timesteps=self.timesteps
+            _call_agent_method(
+                self.agents,
+                "post_interaction",
+                terminated=terminated,
+                timestep=timestep,
+                timesteps=self.cfg.timesteps,
             )
 
             if self.env.num_envs > 1:

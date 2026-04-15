@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import logging
 import sys
 from collections import deque
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
-import numpy as np
 import torch
 import tqdm
+from gym_pusht.envs import PushTEnv
 from skrl.agents.torch import Agent
+from skrl.agents.torch.base import ExperimentCfg
 from torch.utils.data import DataLoader
 
 from agents.diffusion_policy_state import (
@@ -21,20 +25,97 @@ from agents.diffusion_policy_state import (
     EMAModel,
 )
 from datasets.pushert import PushTStateDataset, download_dataset
-from testing.envs.pushert.pushert import PushTEnv
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-SUPERVISED_TRAINER_DEFAULT_CONFIG = {
-    "epochs": 10,
-    "validation_split": 0.2,
-    "shuffle": True,
-    "eval_frequency": 10,
-    "num_workers": 0,
-    "num_epochs": 100,
-}
+@dataclasses.dataclass(kw_only=True)
+class SupervisedTrainerCfg:
+    """Configuration for offline supervised training."""
+
+    epochs: int = 10
+    """Legacy alias for num_epochs."""
+
+    validation_split: float = 0.2
+    """Fraction of the dataset reserved for validation when splitting upstream."""
+
+    shuffle: bool = True
+    """Whether dataloaders should shuffle training data."""
+
+    eval_frequency: int = 10
+    """Number of epochs between validation/callback execution."""
+
+    num_workers: int = 0
+    """Default number of dataloader workers."""
+
+    batch_size: int = 256
+    """Default batch size for upstream dataloader construction."""
+
+    num_epochs: int = 100
+    """Number of training epochs."""
+
+    write_interval: int = 1
+    """Epoch interval for writing tracked metrics."""
+
+    checkpoint_interval: int = 0
+    """Epoch interval reserved for supervised checkpoint callbacks."""
+
+    experiment: ExperimentCfg | dict[str, Any] = dataclasses.field(
+        default_factory=lambda: ExperimentCfg(
+            directory="",
+            experiment_name="",
+            write_interval=1,
+            checkpoint_interval=0,
+            wandb=False,
+            wandb_kwargs={},
+        )
+    )
+    """Experiment logging/checkpointing settings used by skrl agents."""
+
+    def expand(self) -> None:
+        if isinstance(self.experiment, dict):
+            self.experiment = ExperimentCfg(**self.experiment)
+        if self.num_epochs is None:
+            self.num_epochs = self.epochs
+
+    def to_dict(self) -> dict[str, Any]:
+        self.expand()
+        return dataclasses.asdict(self)
+
+    def copy(self) -> dict[str, Any]:
+        return copy.deepcopy(self.to_dict())
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+
+SUPERVISED_TRAINER_DEFAULT_CONFIG = SupervisedTrainerCfg()
+
+
+def _coerce_supervised_trainer_cfg(
+    cfg: SupervisedTrainerCfg | Mapping[str, Any] | None,
+) -> SupervisedTrainerCfg:
+    if cfg is None:
+        result = SupervisedTrainerCfg()
+    elif isinstance(cfg, SupervisedTrainerCfg):
+        result = copy.deepcopy(cfg)
+    elif isinstance(cfg, Mapping):
+        result = SupervisedTrainerCfg()
+        for key, value in cfg.items():
+            if not hasattr(result, key):
+                raise ValueError(f"Invalid supervised trainer config key: {key}")
+            setattr(result, key, copy.deepcopy(value))
+    else:
+        raise TypeError(
+            "trainer_config must be a SupervisedTrainerCfg, mapping, or None "
+            f"(got {type(cfg).__name__})"
+        )
+    result.expand()
+    return result
 
 
 class SupervisedTrainer:
@@ -48,68 +129,75 @@ class SupervisedTrainer:
         valid_loader: Optional[DataLoader] = None,
         callback_fn: Optional[Callable] = None,
     ):
-        self.config = {**SUPERVISED_TRAINER_DEFAULT_CONFIG, **(trainer_config or {})}
+        self.config = _coerce_supervised_trainer_cfg(trainer_config)
         self.agent = agent
-        self.epochs = self.config["num_epochs"]
-        self.eval_frequency = self.config["eval_frequency"]
+        self.epochs = self.config.num_epochs
+        self.eval_frequency = self.config.eval_frequency
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self._callback_fn = callback_fn
 
-        # pass trainer config to agent (if agent uses it)
+        if hasattr(self.agent, "cfg") and hasattr(self.agent.cfg, "experiment"):
+            self.agent.cfg.experiment = copy.deepcopy(self.config.experiment)
         self.agent.init(trainer_cfg=self.config)
 
     def _validate(self) -> float:
         self.agent.eval()
         total_loss, batch_count = 0.0, 0
         with torch.no_grad():
-            for inputs, targets in self.valid_loader:
-                inputs, targets = (
-                    inputs.to(self.agent.device),
-                    targets.to(self.agent.device),
-                )
-                loss = self.agent._update(inputs, targets)
+            for batch in self.valid_loader:
+                loss = self._update_batch(batch)
                 total_loss += loss.item()
                 batch_count += 1
         return total_loss / max(batch_count, 1)
 
+    def _update_batch(self, batch) -> torch.Tensor:
+        if isinstance(batch, Mapping):
+            return self.agent._update(batch)
+        inputs, targets = batch
+        inputs = inputs.to(self.agent.device)
+        targets = targets.to(self.agent.device)
+        return self.agent._update(inputs, targets)
+
     def train(self):
         assert self.train_loader is not None, "Set train_loader first"
 
-        self.agent.set_running_mode("train")
+        if hasattr(self.agent, "set_running_mode"):
+            self.agent.set_running_mode("train")
+        elif hasattr(self.agent, "enable_training_mode"):
+            self.agent.enable_training_mode(True)
         self.agent.set_mode("train")
 
         for epoch in range(self.epochs):
             epoch_loss, batch_count = 0.0, 0
 
-            for inputs, targets in tqdm.tqdm(
+            for batch in tqdm.tqdm(
                 self.train_loader,
                 desc=f"Epoch {epoch + 1}/{self.epochs}",
                 file=sys.stdout,
             ):
-                inputs, targets = (
-                    inputs.to(self.agent.device),
-                    targets.to(self.agent.device),
-                )
-
-                loss = self.agent._update(inputs, targets)
+                loss = self._update_batch(batch)
 
                 epoch_loss += loss.item()
                 batch_count += 1
 
             avg_loss = epoch_loss / batch_count
-            self.agent.track_data("Training/Loss", avg_loss)
+            self.agent.track_data("Training / Loss", avg_loss)
 
             if epoch % self.eval_frequency == 0 and self._callback_fn:
                 val_loss = None
                 if self.valid_loader is not None:
                     val_loss = self._validate()
-                    self.agent.track_data("Validation/Loss", val_loss)
+                    self.agent.track_data("Validation / Loss", val_loss)
                     self.agent.set_mode("train")
                 self._callback_fn(epoch, avg_loss, val_loss)
                 self.agent.set_mode("train")
 
-            self.agent.write_tracking_data(epoch, self.epochs)
+            if (
+                self.config.write_interval > 0
+                and epoch % self.config.write_interval == 0
+            ):
+                self.agent.write_tracking_data(epoch, self.epochs)
 
 
 def rollout_pusht(
