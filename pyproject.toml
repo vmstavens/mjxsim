@@ -35,6 +35,33 @@ envs = [
     "pymunk",
     "shapely",
 ]
+examples = [
+    "brax>=0.14.1",
+    "diffusers>=0.36.0",
+    "gdown",
+    "gym>=0.26",
+    "gym-pusht",
+    "gymnasium>=0.28",
+    "jax",
+    "jaxlib",
+    "jaxlie>=1.5.0",
+    "matplotlib>=3.10.8",
+    "ml-collections",
+    "mujoco>=3.4.0",
+    "mujoco-mjx>=3.4.0",
+    "opencv-python",
+    "pandas",
+    "pillow",
+    "playground>=0.1.0",
+    "pygame",
+    "pymunk",
+    "shapely",
+    "skrl>=2.0.0",
+    "torch",
+    "tqdm",
+    "tyro",
+    "zarr",
+]
 mujoco = [
     "absl-py",
     "brax>=0.14.1",
@@ -52,12 +79,13 @@ mujoco = [
     "playground>=0.1.0",
     "robot-descriptions>=1.22.0",
     "shapely",
+    "tyro",
 ]
 rl = ["skrl>=2.0.0", "torch"]
 stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["mjxsim", "agents", "datasets", "envs", "trainers", "utils"]
+packages = ["mjxsim", "agents", "datasets", "envs", "examples", "trainers", "utils"]
 artifacts = ["mjxsim/py.typed"]
 
 [tool.hatch.metadata]

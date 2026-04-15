@@ -3,23 +3,36 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
-import jax
-from ml_collections import config_dict
-import mujoco.mjx as mjx
-from mujoco_playground import MjxEnv, registry
+if TYPE_CHECKING:  # pragma: no cover - imported for type checkers only
+    from ml_collections import config_dict
+    from mujoco_playground import MjxEnv
 
-from mujoco_playground._src.manipulation import _envs, _cfgs, _randomizer
+ConfigFactory: TypeAlias = Callable[[], "config_dict.ConfigDict"]
+ConfigInput: TypeAlias = Any | ConfigFactory | None
+DomainRandomizer: TypeAlias = Callable[[Any, Any], tuple[Any, Any]]
 
-ConfigFactory: TypeAlias = Callable[[], config_dict.ConfigDict]
-ConfigInput: TypeAlias = config_dict.ConfigDict | ConfigFactory | None
-DomainRandomizer: TypeAlias = Callable[
-    [mjx.Model, jax.Array], tuple[mjx.Model, mjx.Model]
-]
+
+def _playground_registry():
+    try:
+        from ml_collections import config_dict
+        from mujoco_playground import registry
+        from mujoco_playground._src.manipulation import _cfgs, _envs, _randomizer
+    except ImportError as exc:
+        msg = (
+            "utils.load.register requires the MuJoCo Playground dependencies. "
+            "Install them with `uv add \"/path/to/mjxsim[mujoco]\"` or "
+            "`uv add \"/path/to/mjxsim[examples]\"`."
+        )
+        raise ImportError(msg) from exc
+
+    return config_dict, registry, _envs, _cfgs, _randomizer
 
 
 def _config_factory(config: ConfigInput) -> ConfigFactory | None:
+    config_dict, _, _, _, _ = _playground_registry()
+
     if config is None:
         return None
 
@@ -39,12 +52,14 @@ def _config_factory(config: ConfigInput) -> ConfigFactory | None:
 
 
 def _add_to_top_level_registry(env_name: str) -> None:
+    _, registry, _, _, _ = _playground_registry()
+
     if env_name not in registry.ALL_ENVS:
         registry.ALL_ENVS = registry.ALL_ENVS + (env_name,)
 
 
 def register(
-    env_type: type[MjxEnv],
+    env_type: type["MjxEnv"],
     config: ConfigInput = None,
     domain_randomize_fn: DomainRandomizer | None = None,
     *,
@@ -68,6 +83,8 @@ def register(
     Returns:
         The environment name used in the registry.
     """
+    _, registry, _envs, _cfgs, _randomizer = _playground_registry()
+
     name = env_name or env_type.__name__
     if not name:
         raise ValueError("env_name must be provided when env_type has no name.")

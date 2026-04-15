@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
     from utils.datahandler import DataHandler  # noqa: F401
     from utils.datasets import split_dataset  # noqa: F401
+    from utils.load import register  # noqa: F401
     from utils.mjx import ObjType, get_pose, set_pose  # noqa: F401
 
 _SUBMODULE_EXPORTS = [
@@ -75,6 +76,7 @@ _UTIL_EXPORTS = [
     "DataHandler",
     "ObjType",
     "get_pose",
+    "register",
     "set_pose",
     "split_dataset",
 ]
@@ -109,6 +111,7 @@ _EXPORT_MODULES = {
     "DataHandler": "utils.datahandler",
     "ObjType": "utils.mjx",
     "get_pose": "utils.mjx",
+    "register": "utils.load",
     "set_pose": "utils.mjx",
     "split_dataset": "utils.datasets",
 }
