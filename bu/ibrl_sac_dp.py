@@ -1,10 +1,7 @@
 import copy
 import itertools
-import json
 import logging
 import os
-from collections import deque
-from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
 import gymnasium
@@ -14,14 +11,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from packaging import version
 
-# from skrl.agents.torch import Agent
-from agents.base_ibrl_agent import Agent
-
 # from skrl import config, logger
 # from algorithms.IBRLbase import Agent
-from skrl.skrl.memories.torch import Memory, RandomMemory
+from skrl.skrl.memories.torch import Memory
 from skrl.skrl.models.torch import Model
-from skrl.skrl.utils import postprocessing
+
+# from skrl.agents.torch import Agent
+from bu.base_ibrl_agent import Agent
 
 logging.basicConfig(level=logging.WARNING)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory
