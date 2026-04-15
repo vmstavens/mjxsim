@@ -11,50 +11,50 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Victor Melbye Staven" }]
 dependencies = [
-    "brax>=0.14.1",
-    "diffusers>=0.36.0",
-    "gdown",
-    "gym>=0.26",
-    "gym-pusht",
-    "gymnasium>=0.28",
-    "jax[cuda12]>=0.9.0.1",
-    "jaxlie>=1.5.0",
-    "matplotlib>=3.10.8",
-    "mujoco>=3.4.0",
-    "mujoco-mjx>=3.4.0",
     "numpy",
-    "opencv-python",
     "packaging",
+]
+
+[project.optional-dependencies]
+cuda = ["jax[cuda12]>=0.9.0.1"]
+datasets = [
+    "gdown",
+    "opencv-python",
     "pandas",
     "pillow",
-    "playground>=0.1.0",
-    "pybind11-stubgen>=2.5.5",
-    "pygame",
-    "pymunk",
-    "robot-descriptions>=1.22.0",
-    "skrl>=2.0.0",
     "torch",
     "tqdm",
     "zarr",
 ]
-
-[project.optional-dependencies]
-diffusion = ["diffusers", "wandb"]
+diffusion = ["diffusers>=0.36.0", "torch", "wandb"]
+envs = [
+    "gym>=0.26",
+    "gym-pusht",
+    "gymnasium>=0.28",
+    "pygame",
+    "pymunk",
+    "shapely",
+]
 mujoco = [
     "absl-py",
-    "brax",
+    "brax>=0.14.1",
     "dm-control",
     "etils",
     "flax",
     "glfw",
     "jax",
     "jaxlib",
-    "jaxlie",
+    "jaxlie>=1.5.0",
     "ml-collections",
-    "mujoco",
-    "robot_descriptions",
+    "matplotlib>=3.10.8",
+    "mujoco>=3.4.0",
+    "mujoco-mjx>=3.4.0",
+    "playground>=0.1.0",
+    "robot-descriptions>=1.22.0",
     "shapely",
 ]
+rl = ["skrl>=2.0.0", "torch"]
+stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["mjxsim", "agents", "datasets", "envs", "trainers", "utils"]

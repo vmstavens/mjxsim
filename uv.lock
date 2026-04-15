@@ -1697,37 +1697,35 @@ name = "mjxsim"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "brax" },
-    { name = "diffusers" },
-    { name = "gdown" },
-    { name = "gym" },
-    { name = "gym-pusht" },
-    { name = "gymnasium" },
-    { name = "jax", extra = ["cuda12"] },
-    { name = "jaxlie" },
-    { name = "matplotlib" },
-    { name = "mujoco" },
-    { name = "mujoco-mjx" },
     { name = "numpy" },
-    { name = "opencv-python" },
     { name = "packaging" },
+]
+
+[package.optional-dependencies]
+cuda = [
+    { name = "jax", extra = ["cuda12"] },
+]
+datasets = [
+    { name = "gdown" },
+    { name = "opencv-python" },
     { name = "pandas" },
     { name = "pillow" },
-    { name = "playground" },
-    { name = "pybind11-stubgen" },
-    { name = "pygame" },
-    { name = "pymunk" },
-    { name = "robot-descriptions" },
-    { name = "skrl" },
     { name = "torch" },
     { name = "tqdm" },
     { name = "zarr" },
 ]
-
-[package.optional-dependencies]
 diffusion = [
     { name = "diffusers" },
+    { name = "torch" },
     { name = "wandb" },
+]
+envs = [
+    { name = "gym" },
+    { name = "gym-pusht" },
+    { name = "gymnasium" },
+    { name = "pygame" },
+    { name = "pymunk" },
+    { name = "shapely" },
 ]
 mujoco = [
     { name = "absl-py" },
@@ -1739,56 +1737,64 @@ mujoco = [
     { name = "jax" },
     { name = "jaxlib" },
     { name = "jaxlie" },
+    { name = "matplotlib" },
     { name = "ml-collections" },
     { name = "mujoco" },
+    { name = "mujoco-mjx" },
+    { name = "playground" },
     { name = "robot-descriptions" },
     { name = "shapely" },
+]
+rl = [
+    { name = "skrl" },
+    { name = "torch" },
+]
+stubs = [
+    { name = "pybind11-stubgen" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "absl-py", marker = "extra == 'mujoco'" },
-    { name = "brax", specifier = ">=0.14.1" },
-    { name = "brax", marker = "extra == 'mujoco'" },
-    { name = "diffusers", specifier = ">=0.36.0" },
-    { name = "diffusers", marker = "extra == 'diffusion'" },
+    { name = "brax", marker = "extra == 'mujoco'", specifier = ">=0.14.1" },
+    { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.36.0" },
     { name = "dm-control", marker = "extra == 'mujoco'" },
     { name = "etils", marker = "extra == 'mujoco'" },
     { name = "flax", marker = "extra == 'mujoco'" },
-    { name = "gdown" },
+    { name = "gdown", marker = "extra == 'datasets'" },
     { name = "glfw", marker = "extra == 'mujoco'" },
-    { name = "gym", specifier = ">=0.26" },
-    { name = "gym-pusht" },
-    { name = "gymnasium", specifier = ">=0.28" },
+    { name = "gym", marker = "extra == 'envs'", specifier = ">=0.26" },
+    { name = "gym-pusht", marker = "extra == 'envs'" },
+    { name = "gymnasium", marker = "extra == 'envs'", specifier = ">=0.28" },
     { name = "jax", marker = "extra == 'mujoco'" },
-    { name = "jax", extras = ["cuda12"], specifier = ">=0.9.0.1" },
+    { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda'", specifier = ">=0.9.0.1" },
     { name = "jaxlib", marker = "extra == 'mujoco'" },
-    { name = "jaxlie", specifier = ">=1.5.0" },
-    { name = "jaxlie", marker = "extra == 'mujoco'" },
-    { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "jaxlie", marker = "extra == 'mujoco'", specifier = ">=1.5.0" },
+    { name = "matplotlib", marker = "extra == 'mujoco'", specifier = ">=3.10.8" },
     { name = "ml-collections", marker = "extra == 'mujoco'" },
-    { name = "mujoco", specifier = ">=3.4.0" },
-    { name = "mujoco", marker = "extra == 'mujoco'" },
-    { name = "mujoco-mjx", specifier = ">=3.4.0" },
+    { name = "mujoco", marker = "extra == 'mujoco'", specifier = ">=3.4.0" },
+    { name = "mujoco-mjx", marker = "extra == 'mujoco'", specifier = ">=3.4.0" },
     { name = "numpy" },
-    { name = "opencv-python" },
+    { name = "opencv-python", marker = "extra == 'datasets'" },
     { name = "packaging" },
-    { name = "pandas" },
-    { name = "pillow" },
-    { name = "playground", specifier = ">=0.1.0" },
-    { name = "pybind11-stubgen", specifier = ">=2.5.5" },
-    { name = "pygame" },
-    { name = "pymunk" },
-    { name = "robot-descriptions", specifier = ">=1.22.0" },
-    { name = "robot-descriptions", marker = "extra == 'mujoco'" },
+    { name = "pandas", marker = "extra == 'datasets'" },
+    { name = "pillow", marker = "extra == 'datasets'" },
+    { name = "playground", marker = "extra == 'mujoco'", specifier = ">=0.1.0" },
+    { name = "pybind11-stubgen", marker = "extra == 'stubs'", specifier = ">=2.5.5" },
+    { name = "pygame", marker = "extra == 'envs'" },
+    { name = "pymunk", marker = "extra == 'envs'" },
+    { name = "robot-descriptions", marker = "extra == 'mujoco'", specifier = ">=1.22.0" },
+    { name = "shapely", marker = "extra == 'envs'" },
     { name = "shapely", marker = "extra == 'mujoco'" },
-    { name = "skrl", specifier = ">=2.0.0" },
-    { name = "torch" },
-    { name = "tqdm" },
+    { name = "skrl", marker = "extra == 'rl'", specifier = ">=2.0.0" },
+    { name = "torch", marker = "extra == 'datasets'" },
+    { name = "torch", marker = "extra == 'diffusion'" },
+    { name = "torch", marker = "extra == 'rl'" },
+    { name = "tqdm", marker = "extra == 'datasets'" },
     { name = "wandb", marker = "extra == 'diffusion'" },
-    { name = "zarr" },
+    { name = "zarr", marker = "extra == 'datasets'" },
 ]
-provides-extras = ["diffusion", "mujoco"]
+provides-extras = ["cuda", "datasets", "diffusion", "envs", "mujoco", "rl", "stubs"]
 
 [[package]]
 name = "ml-collections"

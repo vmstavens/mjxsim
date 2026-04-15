@@ -5,8 +5,16 @@ MuJoCo/Brax simulation helpers, RL agents built on SKRL + PyTorch, and dataset u
 ## Installation
 - With uv from this repo: `uv add /path/to/mjxsim`
 - From a Git URL: `uv add "git+ssh://git@your-host/mjxsim.git"`
-- Enable MuJoCo/Brax support: `uv add "mjxsim[mujoco]"` (installs jax, brax, mujoco, dm-control, etc.)
-- Enable diffusion-policy helpers: `uv add "mjxsim[diffusion]"`
+- Dataset helpers: `uv add "/path/to/mjxsim[datasets]"`
+- PushT/Gym environments: `uv add "/path/to/mjxsim[envs]"`
+- RL agents: `uv add "/path/to/mjxsim[rl]"`
+- Diffusion-policy helpers: `uv add "/path/to/mjxsim[diffusion]"`
+- MuJoCo/Brax support: `uv add "/path/to/mjxsim[mujoco]"` (installs jax, brax, mujoco, dm-control, etc.)
+- CUDA JAX support: `uv add "/path/to/mjxsim[cuda]"` only when you need CUDA-backed JAX.
+
+The base install intentionally avoids CUDA, Torch, MuJoCo, and RL framework
+wheels so the package can be imported from other projects without forcing a
+large GPU stack.
 
 ## Imports
 Installers expose a real `mjxsim` package, with the main building blocks
