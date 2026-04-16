@@ -240,34 +240,34 @@ class IBRL(Agent):
             self.target_critic_2.update_parameters(self.critic_2, polyak=1)
 
         # configuration
-        self._gradient_steps: int = self.cfg["gradient_steps"]
-        self._batch_size: int = self.cfg["batch_size"]
-        self._discount_factor: float = self.cfg["discount_factor"]
-        self._polyak: float = self.cfg["polyak"]
-        self._actor_learning_rate: float = self.cfg["actor_learning_rate"]
-        self._critic_learning_rate: float = self.cfg["critic_learning_rate"]
-        self._learning_rate_scheduler = self.cfg["learning_rate_scheduler"]
-        self._state_preprocessor = self.cfg["state_preprocessor"]
-        self._random_timesteps: int = self.cfg["random_timesteps"]
-        self._learning_starts: int = self.cfg["learning_starts"]  # 0
-        self._grad_norm_clip = self.cfg["grad_norm_clip"]
-        self._exploration_noise = self.cfg["exploration"]["noise"]
-        self._exploration_initial_scale = self.cfg["exploration"]["initial_scale"]
-        self._exploration_final_scale = self.cfg["exploration"]["final_scale"]
-        self._exploration_timesteps = self.cfg["exploration"]["timesteps"]
-        self._entropy_learning_rate: float = self.cfg["entropy_learning_rate"]
-        self._learn_entropy: bool = self.cfg["learn_entropy"]
-        self._entropy_coefficient: float = self.cfg["initial_entropy_value"]
-        self._rewards_shaper = self.cfg["rewards_shaper"]
-        self._mixed_precision: bool = self.cfg["mixed_precision"]
-        self._soft_update_beta = self.cfg["soft_update_beta"]
-        self._actor: str = self.cfg["actor"]
+        self._gradient_steps: int = self.cfg.gradient_steps
+        self._batch_size: int = self.cfg.batch_size
+        self._discount_factor: float = self.cfg.discount_factor
+        self._polyak: float = self.cfg.polyak
+        self._actor_learning_rate: float = self.cfg.actor_learning_rate
+        self._critic_learning_rate: float = self.cfg.critic_learning_rate
+        self._learning_rate_scheduler = self.cfg.learning_rate_scheduler
+        self._state_preprocessor = self.cfg.state_preprocessor
+        self._random_timesteps: int = self.cfg.random_timesteps
+        self._learning_starts: int = self.cfg.learning_starts  # 0
+        self._grad_norm_clip = self.cfg.grad_norm_clip
+        self._exploration_noise = self.cfg.exploration.noise
+        self._exploration_initial_scale = self.cfg.exploration.initial_scale
+        self._exploration_final_scale = self.cfg.exploration.final_scale
+        self._exploration_timesteps = self.cfg.exploration.timesteps
+        self._entropy_learning_rate: float = self.cfg.entropy_learning_rate
+        self._learn_entropy: bool = self.cfg.learn_entropy
+        self._entropy_coefficient: float = self.cfg.initial_entropy_value
+        self._rewards_shaper = self.cfg.rewards_shaper
+        self._mixed_precision: bool = self.cfg.mixed_precision
+        self._soft_update_beta = self.cfg.soft_update_beta
+        self._actor: str = self.cfg.actor
 
         self._actors = ["rl", "il", "both"]
 
-        self._il_ctrl_scale = self.cfg["il_ctrl_scale"]
-        self._rl_ctrl_scale = self.cfg["rl_ctrl_scale"]
-        self._warmup_timesteps = self.cfg["warmup_timesteps"]
+        self._il_ctrl_scale = self.cfg.il_ctrl_scale
+        self._rl_ctrl_scale = self.cfg.rl_ctrl_scale
+        self._warmup_timesteps = self.cfg.warmup_timesteps
 
         assert self._actor in self._actors, (
             f"In config: 'actor' should be one of {self._actors} but got {self._actor}"
@@ -298,7 +298,7 @@ class IBRL(Agent):
 
         # entropy
         if self._learn_entropy:
-            self._target_entropy = self.cfg["target_entropy"]
+            self._target_entropy = self.cfg.target_entropy
             if self._target_entropy is None:
                 if issubclass(type(self.action_space), gymnasium.spaces.Box):
                     self._target_entropy = -np.prod(self.action_space.shape).astype(
@@ -333,10 +333,10 @@ class IBRL(Agent):
             )
             if self._learning_rate_scheduler is not None:
                 self.policy_scheduler = self._learning_rate_scheduler(
-                    self.policy_optimizer, **self.cfg["learning_rate_scheduler_kwargs"]
+                    self.policy_optimizer, **self.cfg.learning_rate_scheduler_kwargs
                 )
                 self.critic_scheduler = self._learning_rate_scheduler(
-                    self.critic_optimizer, **self.cfg["learning_rate_scheduler_kwargs"]
+                    self.critic_optimizer, **self.cfg.learning_rate_scheduler_kwargs
                 )
 
             self.checkpoint_modules["policy_optimizer"] = self.policy_optimizer
@@ -345,7 +345,7 @@ class IBRL(Agent):
         # set up preprocessors
         if self._state_preprocessor:
             self._state_preprocessor = self._state_preprocessor(
-                **self.cfg["state_preprocessor_kwargs"]
+                **self.cfg.state_preprocessor_kwargs
             )
             self.checkpoint_modules["state_preprocessor"] = self._state_preprocessor
         else:
@@ -555,7 +555,7 @@ class IBRL(Agent):
             names=self._tensors_names,
             # OBS: Obs, we are sampling num envs instead of batch_size in order to follow the shape
             # of the observations coming from the environment.
-            batch_size=self.cfg["num_envs"],
+            batch_size=self.cfg.num_envs,
         )[0]
 
         # compute states BC loss to track state-OOD behavior
