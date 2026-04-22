@@ -12,8 +12,9 @@ import torch
 import zarr
 from torch.utils.data import DataLoader, Dataset
 
-from agents.diffusion_policy_vision import DiffusionPolicyVision, VISION_DP_CFG
-from datasets.pushert import (
+from agents.diffusion_policy_vision import VISION_DP_CFG, DiffusionPolicyVision
+from envs.pushert import PushTEnv
+from examples.datasets.pushert import (
     create_sample_indices,
     download_dataset,
     get_data_stats,
@@ -21,7 +22,6 @@ from datasets.pushert import (
     sample_sequence,
     save_video,
 )
-from envs.pushert import PushTEnv
 from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
 
 logging.basicConfig(level=logging.INFO)
@@ -72,9 +72,7 @@ class PushTImageDataset(Dataset):
             "agent_pos": agent_pos,
             "action": action,
         }
-        self.stats = {
-            key: get_data_stats(value) for key, value in train_data.items()
-        }
+        self.stats = {key: get_data_stats(value) for key, value in train_data.items()}
         self.normalized_train_data = {
             key: normalize_data(value, self.stats[key])
             for key, value in train_data.items()
@@ -87,6 +85,7 @@ class PushTImageDataset(Dataset):
         )
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
+        self.image_shape = tuple(self.images.shape[1:])
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -104,22 +103,29 @@ class PushTImageDataset(Dataset):
             sample_end_idx=sample_end_idx,
         )
 
-        image_window = np.asarray(
-            self.images[buffer_start_idx:buffer_end_idx],
-            dtype=np.float32,
-        )
-        images = np.zeros(
-            (self.pred_horizon,) + image_window.shape[1:],
-            dtype=np.float32,
-        )
+        images = np.empty((self.obs_horizon,) + self.image_shape, dtype=np.float32)
         if sample_start_idx > 0:
-            images[:sample_start_idx] = image_window[0]
-        if sample_end_idx < self.pred_horizon:
-            images[sample_end_idx:] = image_window[-1]
-        images[sample_start_idx:sample_end_idx] = image_window
+            pad_end = min(sample_start_idx, self.obs_horizon)
+            images[:pad_end] = np.asarray(
+                self.images[buffer_start_idx], dtype=np.float32
+            )
+
+        data_start = sample_start_idx
+        data_end = min(sample_end_idx, self.obs_horizon)
+        if data_start < data_end:
+            raw_start = buffer_start_idx + (data_start - sample_start_idx)
+            raw_end = raw_start + (data_end - data_start)
+            images[data_start:data_end] = np.asarray(
+                self.images[raw_start:raw_end], dtype=np.float32
+            )
+
+        if sample_end_idx < self.obs_horizon:
+            images[sample_end_idx:] = np.asarray(
+                self.images[buffer_end_idx - 1], dtype=np.float32
+            )
 
         return {
-            "image": torch.from_numpy(images[: self.obs_horizon]),
+            "image": torch.from_numpy(images),
             "agent_pos": torch.from_numpy(
                 sample["agent_pos"][: self.obs_horizon]
             ).float(),
@@ -209,7 +215,7 @@ def main() -> None:
     models_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = VISION_DP_CFG()
-    cfg.num_workers = 0
+    cfg.num_workers = max(cfg.num_workers, 24)
     cfg.experiment.directory = run_dir.as_posix()
     cfg.experiment.experiment_name = "pushert_vision_dp"
     cfg.experiment.write_interval = 1

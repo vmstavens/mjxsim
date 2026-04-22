@@ -13,7 +13,6 @@ from skrl import config, logger
 from skrl.agents.torch.base import AgentCfg, ExperimentCfg
 from skrl.memories.torch import Memory
 from skrl.models.torch import Model
-from skrl.utils import postprocessing
 
 from .ibrl_base_agent import Agent
 
@@ -41,17 +40,12 @@ class DRLR_CFG(AgentCfg):
     entropy_learning_rate: float = 3e-4
     initial_entropy_value: float = 0.01
     target_entropy: float | None = None
-    red_q_enable: bool = True
-    ensemble_size: int = 5
-    critic_subset_size: int = 2
-    policy_subset_size: int = 2
     offline: bool = False
-    bc: bool = False
     demo_file: str = ""
     num_envs: int = 1
     rewards_shaper: Any = None
     mixed_precision: bool = False
-    experiment: ExperimentCfg | dict[str, Any] = dataclasses.field(
+    experiment: ExperimentCfg = dataclasses.field(
         default_factory=lambda: ExperimentCfg(
             write_interval="auto",
             checkpoint_interval="auto",
@@ -60,42 +54,9 @@ class DRLR_CFG(AgentCfg):
 
     def expand(self) -> None:
         super().expand()
-        if isinstance(self.experiment, dict):
-            self.experiment = ExperimentCfg(**self.experiment)
-
-    def to_dict(self) -> dict[str, Any]:
-        self.expand()
-        return dataclasses.asdict(self)
-
-    def copy(self) -> dict[str, Any]:
-        return copy.deepcopy(self.to_dict())
 
 
 DRLR_DEFAULT_CONFIG = DRLR_CFG()
-
-
-def _coerce_drlr_cfg(cfg: DRLR_CFG | Mapping[str, Any] | None) -> DRLR_CFG:
-    aliases = {
-        "RED-Q_enable": "red_q_enable",
-        "BC": "bc",
-    }
-    if cfg is None:
-        result = DRLR_CFG()
-    elif isinstance(cfg, DRLR_CFG):
-        result = copy.deepcopy(cfg)
-    elif isinstance(cfg, Mapping):
-        result = DRLR_CFG()
-        for key, value in cfg.items():
-            attr = aliases.get(key, key)
-            if not hasattr(result, attr):
-                raise ValueError(f"Invalid DRLR config key: {key}")
-            setattr(result, attr, copy.deepcopy(value))
-    else:
-        raise TypeError(
-            f"cfg must be a DRLR_CFG, mapping, or None (got {type(cfg).__name__})"
-        )
-    result.expand()
-    return result
 
 
 class DRLR(Agent):
@@ -103,12 +64,12 @@ class DRLR(Agent):
         self,
         models: Mapping[str, Model],
         models_il: Dict[str, Model],
-        memory: Optional[Union[Memory, Tuple[Memory]]] = None,
-        expert_memory: Optional[Union[Memory, Tuple[Memory]]] = None,
+        memory: Optional[Memory] = None,
+        expert_memory: Optional[Memory] = None,
         observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
         action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
         device: Optional[Union[str, torch.device]] = None,
-        cfg: Optional[DRLR_CFG | Mapping[str, Any]] = None,
+        cfg: Optional[DRLR_CFG] = None,
     ) -> None:
         """Deep Reinforcement Learning with Reference (DRLR)
 
@@ -118,9 +79,7 @@ class DRLR(Agent):
         :type models:  Working as RL agent, dictionary of skrl.models.torch.Model
         :type models_il:  Working as IL agent, dictionary of skrl.models.torch.Model
         :param memory: Working as Replay buffer, to storage the transitions from online interactions.
-                       If it is a tuple, the first element will be used for training and
-                       for the rest only the environment transitions will be added
-        :type memory: skrl.memory.torch.Memory, list of skrl.memory.torch.Memory or None
+        :type memory: skrl.memory.torch.Memory or None
         :param expert_memory: Working as expert buffer, to storage the offline expert demonstrations. Same type with memory.
         :param observation_space: Observation/state space or shape (default: ``None``)
         :type observation_space: int, tuple or list of int, gymnasium.Space or None, optional
@@ -129,12 +88,13 @@ class DRLR(Agent):
         :param device: Device on which a tensor/array is or will be allocated (default: ``None``).
                        If None, the device will be either ``"cuda"`` if available or ``"cpu"``
         :type device: str or torch.device, optional
-        :param cfg: Configuration dictionary
-        :type cfg: dict
+        :param cfg: Agent configuration
+        :type cfg: DRLR_CFG
 
         :raises KeyError: If the models dictionary is missing a required key
         """
-        _cfg = _coerce_drlr_cfg(cfg)
+        _cfg = DRLR_CFG() if cfg is None else copy.deepcopy(cfg)
+        _cfg.expand()
         super().__init__(
             models=models,
             models_il=models_il,
@@ -154,28 +114,12 @@ class DRLR(Agent):
         self.target_critic_1 = self.models.get("target_critic_1", None)
         self.target_critic_2 = self.models.get("target_critic_2", None)
 
-        self.RED_Q = self.cfg.red_q_enable
-        if self.RED_Q:
-            # RED-Q: ensemble of critics
-            self.critics = self.models.get("critics", [])
-            self.target_critics = self.models.get("target_critics", [])
-        else:
-            self.critic_1 = self.models.get("critic_1", None)
-            self.critic_2 = self.models.get("critic_2", None)
-            self.critics = [self.critic_1, self.critic_2]
-            self.target_critic_1 = self.models.get("target_critic_1", None)
-            self.target_critic_2 = self.models.get("target_critic_2", None)
-            self.target_critics = [self.target_critic_1, self.target_critic_2]
-
         # checkpoint models
         self.checkpoint_modules["policy"] = self.policy
-        for i, critic in enumerate(self.critics):
-            self.checkpoint_modules[f"critic_{i}"] = critic
-        for i, target_critic in enumerate(self.target_critics):
-            self.checkpoint_modules[f"target_critic_{i}"] = target_critic
-
-        self.demo_mean = 0
-        self.demo_cov = 0
+        self.checkpoint_modules["critic_1"] = self.critic_1
+        self.checkpoint_modules["critic_2"] = self.critic_2
+        self.checkpoint_modules["target_critic_1"] = self.target_critic_1
+        self.checkpoint_modules["target_critic_2"] = self.target_critic_2
 
         # broadcast models' parameters in distributed runs
         if config.torch.is_distributed:
@@ -197,39 +141,34 @@ class DRLR(Agent):
             self.target_critic_2.update_parameters(self.critic_2, polyak=1)
 
         # configuration
-        self._gradient_steps = self.cfg.gradient_steps
-        self._batch_size = self.cfg.batch_size
+        self._gradient_steps = _cfg.gradient_steps
+        self._batch_size = _cfg.batch_size
 
-        self._discount_factor = self.cfg.discount_factor
-        self._polyak = self.cfg.polyak
+        self._discount_factor = _cfg.discount_factor
+        self._polyak = _cfg.polyak
 
-        self._actor_learning_rate = self.cfg.actor_learning_rate
-        self._critic_learning_rate = self.cfg.critic_learning_rate
-        self._learning_rate_scheduler = self.cfg.learning_rate_scheduler
+        self._actor_learning_rate = _cfg.actor_learning_rate
+        self._critic_learning_rate = _cfg.critic_learning_rate
+        self._learning_rate_scheduler = _cfg.learning_rate_scheduler
 
-        self._state_preprocessor = self.cfg.state_preprocessor
+        self._state_preprocessor = _cfg.state_preprocessor
 
-        self._random_timesteps = self.cfg.random_timesteps
-        self._learning_starts = self.cfg.learning_starts
+        self._random_timesteps = _cfg.random_timesteps
+        self._learning_starts = _cfg.learning_starts
 
-        self._grad_norm_clip = self.cfg.grad_norm_clip
+        self._grad_norm_clip = _cfg.grad_norm_clip
 
-        self._entropy_learning_rate = self.cfg.entropy_learning_rate
-        self._learn_entropy = self.cfg.learn_entropy
-        self._entropy_coefficient = self.cfg.initial_entropy_value
+        self._entropy_learning_rate = _cfg.entropy_learning_rate
+        self._learn_entropy = _cfg.learn_entropy
+        self._entropy_coefficient = _cfg.initial_entropy_value
 
-        self._rewards_shaper = self.cfg.rewards_shaper
+        self._rewards_shaper = _cfg.rewards_shaper
 
-        self._mixed_precision = self.cfg.mixed_precision
-        # RED-Q parameters
-        self._ensemble_size = self.cfg.ensemble_size
-        self._critic_subset_size = self.cfg.critic_subset_size
-        self._policy_subset_size = self.cfg.policy_subset_size
-        self._offline = self.cfg.offline
-        self._BC = self.cfg.bc
-        self._num_envs = self.cfg.num_envs
+        self._mixed_precision = _cfg.mixed_precision
+        self._offline = _cfg.offline
+        self._num_envs = _cfg.num_envs
 
-        self._demo_file = self.cfg.demo_file
+        self._demo_file = _cfg.demo_file
 
         # set up automatic mixed precision
         self._device_type = torch.device(device).type
@@ -242,7 +181,7 @@ class DRLR(Agent):
 
         # entropy
         if self._learn_entropy:
-            self._target_entropy = self.cfg.target_entropy
+            self._target_entropy = _cfg.target_entropy
             if self._target_entropy is None:
                 if issubclass(type(self.action_space), gymnasium.spaces.Box):
                     self._target_entropy = -np.prod(self.action_space.shape).astype(
@@ -277,10 +216,10 @@ class DRLR(Agent):
             )
             if self._learning_rate_scheduler is not None:
                 self.policy_scheduler = self._learning_rate_scheduler(
-                    self.policy_optimizer, **self.cfg.learning_rate_scheduler_kwargs
+                    self.policy_optimizer, **_cfg.learning_rate_scheduler_kwargs
                 )
                 self.critic_scheduler = self._learning_rate_scheduler(
-                    self.critic_optimizer, **self.cfg.learning_rate_scheduler_kwargs
+                    self.critic_optimizer, **_cfg.learning_rate_scheduler_kwargs
                 )
 
             self.checkpoint_modules["policy_optimizer"] = self.policy_optimizer
@@ -289,15 +228,15 @@ class DRLR(Agent):
         # set up preprocessors
         if self._state_preprocessor:
             self._state_preprocessor = self._state_preprocessor(
-                **self.cfg.state_preprocessor_kwargs
+                **_cfg.state_preprocessor_kwargs
             )
             self.checkpoint_modules["state_preprocessor"] = self._state_preprocessor
         else:
             self._state_preprocessor = self._empty_preprocessor
 
-    def init(self, trainer_cfg: Optional[Mapping[str, Any]] = None) -> None:
+    def init(self, trainer_cfg: Optional[dict[str, Any]] = None) -> None:
         super().init(trainer_cfg=trainer_cfg)
-        self.set_mode("eval")
+        self.enable_training_mode(False, apply_to_models=True)
 
         # create tensors in memory
         if self.memory is not None:
@@ -319,24 +258,6 @@ class DRLR(Agent):
                 "next_states",
                 "terminated",
             ]
-            # exp_memory = postprocessing.MemoryFileIterator("/home/chen/Downloads/new/memories/expert_p.csv")
-            if not self._offline:
-                exp_memory = postprocessing.MemoryFileIterator(self._demo_file)
-                for k, data0 in exp_memory:
-                    # self.expert_memory.add_samples(d)
-                    keys = list(data0.keys())
-                    N = len(data0[keys[0]])
-                    for i in range(0, 128):
-                        self.memory.add_samples(
-                            states=torch.Tensor(np.array(data0[keys[3]][i])),
-                            actions=torch.Tensor(np.array(data0[keys[0]][i])),
-                            rewards=torch.Tensor(np.array(data0[keys[2]][i])),
-                            next_states=torch.Tensor(np.array(data0[keys[1]][i])),
-                            terminated=torch.Tensor(np.array(data0[keys[4]][i])),
-                        )
-                # self.memory.load("/home/chen/Downloads/memories/2000_new.pt")
-                # self.memory.save("/home/chen/Downloads/memories", "csv")
-                print("load memory successfully")
 
             # create tensors in memory
             # # self.expert_memory
@@ -363,30 +284,6 @@ class DRLR(Agent):
                     "next_states",
                     "terminated",
                 ]
-                expert_memory = postprocessing.MemoryFileIterator(self._demo_file)
-
-                for j, data in expert_memory:
-                    # self.expert_memory.add_samples(d)
-                    keys = list(data.keys())
-                    N = len(data[keys[0]])
-                    for i in range(0, N):
-                        self.expert_memory.add_samples(
-                            states=torch.Tensor(np.array(data[keys[3]][i])),
-                            actions=torch.Tensor(np.array(data[keys[0]][i])),
-                            rewards=torch.Tensor(np.array(data[keys[2]][i])),
-                            next_states=torch.Tensor(np.array(data[keys[1]][i])),
-                            terminated=torch.Tensor(np.array(data[keys[4]][i])),
-                        )
-                # self.expert_memory.load("/home/chen/Downloads/memories/2000_new.pt")
-                # self.expert_memory.save("/home/chen/Downloads/memories", "csv")
-                print("load expert memory successfully")
-
-            expert_states_r = self.expert_memory.sample(names=["states"], batch_size=N)[
-                0
-            ][0]
-            self.demo_mean = torch.mean(expert_states_r, dim=0)
-            cov = torch.cov(expert_states_r.T)
-            self.demo_cov = torch.inverse(cov)
 
     def _select_act(
         self, obs: torch.Tensor, exp_obs: torch.Tensor, soft: bool, target: bool
@@ -465,27 +362,14 @@ class DRLR(Agent):
                 {"states": self._state_preprocessor(states)}, role="policy"
             )
 
-        (
-            expert_states_r,
-            expert_actions_r,
-            expert_rewards_r,
-            expert_next_states_r,
-            expert_dones_r,
-        ) = self.expert_memory.sample(
-            names=self._tensors_names, batch_size=self._num_envs
-        )[0]
-
-        diff = states - self.demo_mean
-        left = torch.matmul(diff, self.demo_cov)
-        dist_sq = (left * diff).sum(dim=1)
-        M_dist = torch.sqrt(dist_sq)
+        expert_states_r = self.expert_memory.sample(
+            names=["states"], batch_size=self._num_envs
+        )[0][0]
 
         # select actions
         actions, _, outputs = self._select_act(
             states, expert_states_r, soft=True, target=False
         )
-
-        self.track_data("Loss / states BC loss", torch.mean(M_dist).item())
 
         return actions, None, outputs
 
@@ -543,15 +427,6 @@ class DRLR(Agent):
                 terminated=terminated,
                 truncated=truncated,
             )
-            for expert_memory in self.secondary_memories:
-                expert_memory.add_samples(
-                    states=states,
-                    actions=actions,
-                    rewards=rewards,
-                    next_states=next_states,
-                    terminated=terminated,
-                    truncated=truncated,
-                )
 
         # storage transition in memory
         self.memory.add_samples(
@@ -562,15 +437,6 @@ class DRLR(Agent):
             terminated=terminated,
             truncated=truncated,
         )
-        for memory in self.secondary_memories:
-            memory.add_samples(
-                states=states,
-                actions=actions,
-                rewards=rewards,
-                next_states=next_states,
-                terminated=terminated,
-                truncated=truncated,
-            )
         # if timestep == timesteps - 1:
         #     self.memory.save("./Demos", "csv")
 
@@ -593,41 +459,24 @@ class DRLR(Agent):
         :type timesteps: int
         """
         if timestep >= self._learning_starts:
-            self.set_mode("train")
+            self.enable_training_mode(True, apply_to_models=True)
             self._update(timestep, timesteps)
-            self.set_mode("eval")
+            self.enable_training_mode(False, apply_to_models=True)
 
         # write tracking data and checkpoints
         super().post_interaction(timestep, timesteps)
 
     def _compute_min_q_values(self, states, actions):
         """Helper to compute target Q-values using both critics"""
-        # RED-Q: compute target values using ensemble
-
-        # Compute target values
-        if self.RED_Q:
-            # RED-Q: randomly sample subset of critics to compute target Q value
-            random_critic_indices = torch.randperm(len(self.critics))[
-                : self._critic_subset_size
-            ]
-            target_q_values_list = []
-            for idx in random_critic_indices:
-                target_q_val, _, _ = self.target_critics[idx].act(
-                    {"states": states, "taken_actions": actions},
-                    role=f"target_critic_{idx}",
-                )
-                target_q_values_list.append(target_q_val)
-        else:
-            target_q_values_list = []
-            for idx in [0, 1]:
-                target_q_val, _, _ = self.target_critics[idx].act(
-                    {"states": states, "taken_actions": actions},
-                    role=f"target_critic_{idx + 1}",
-                )
-                target_q_values_list.append(target_q_val)
-        target_q_values = torch.stack(target_q_values_list, dim=0)
-        target_q_value = torch.min(target_q_values, dim=0)[0]
-        return target_q_value
+        target_q1_value, _, _ = self.target_critic_1.act(
+            {"states": states, "taken_actions": actions},
+            role="target_critic_1",
+        )
+        target_q2_value, _, _ = self.target_critic_2.act(
+            {"states": states, "taken_actions": actions},
+            role="target_critic_2",
+        )
+        return torch.min(target_q1_value, target_q2_value)
 
     def _update(self, timestep: int, timesteps: int) -> None:
         """Algorithm's main update step
@@ -712,28 +561,28 @@ class DRLR(Agent):
                         * target_q_values
                     ).mean()
 
-            # RED-Q: compute critic loss for ensemble
-            critic_losses = []
-            for i, critic in enumerate(self.critics):
-                critic_values, _, _ = critic.act(
-                    {"states": sampled_states, "taken_actions": sampled_actions},
-                    role=f"critic_{i}",
-                )
-                critic_loss = F.mse_loss(critic_values, target_values)
-                critic_losses.append(critic_loss)
-
-            # Total critic loss
-            total_critic_loss = sum(critic_losses)
+            critic_1_values, _, _ = self.critic_1.act(
+                {"states": sampled_states, "taken_actions": sampled_actions},
+                role="critic_1",
+            )
+            critic_2_values, _, _ = self.critic_2.act(
+                {"states": sampled_states, "taken_actions": sampled_actions},
+                role="critic_2",
+            )
+            critic_loss = F.mse_loss(
+                critic_1_values, target_values
+            ) + F.mse_loss(critic_2_values, target_values)
 
             # optimization step (critic)
             self.critic_optimizer.zero_grad()
-            total_critic_loss.backward()
+            critic_loss.backward()
             if self._grad_norm_clip > 0:
-                # Clip gradients for all critics in ensemble
-                all_critic_params = []
-                for critic in self.critics:
-                    all_critic_params.extend(critic.parameters())
-                nn.utils.clip_grad_norm_(all_critic_params, self._grad_norm_clip)
+                nn.utils.clip_grad_norm_(
+                    itertools.chain(
+                        self.critic_1.parameters(), self.critic_2.parameters()
+                    ),
+                    self._grad_norm_clip,
+                )
             self.critic_optimizer.step()
 
             # if config.torch.is_distributed:
@@ -763,8 +612,6 @@ class DRLR(Agent):
                     {"states": sampled_states, "taken_actions": actions},
                     role="critic_2",
                 )
-
-                bc_loss = F.mse_loss(actions, sampled_actions)
 
                 policy_loss = (
                     self._entropy_coefficient * log_prob
@@ -820,7 +667,6 @@ class DRLR(Agent):
             if self.write_interval > 0:
                 self.track_data("Loss / Policy loss", policy_loss.item())
                 self.track_data("Loss / Critic loss", critic_loss.item())
-                self.track_data("Loss / BC loss", bc_loss.item())
 
                 self.track_data(
                     "Q-network / Q1 (max)", torch.max(critic_1_values).item()

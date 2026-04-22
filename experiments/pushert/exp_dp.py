@@ -1,13 +1,9 @@
-import json
 import logging
 import os
 from pathlib import Path
-from typing import Tuple
 
-import numpy as np
 import torch
 from matplotlib import pyplot as plt
-from torch.utils.data import Subset
 
 from agents.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
@@ -15,13 +11,12 @@ from agents.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
-from datasets.pushert import PushTStateDataset, download_dataset, save_video
+from examples.datasets.pushert import PushTStateDataset, download_dataset, save_video
 from trainers.supervised_trainer import (
     SUPERVISED_TRAINER_DEFAULT_CONFIG,
     SupervisedTrainer,
 )
 from utils import demo as loc_demo
-from utils.datasets import split_dataset
 
 logging.basicConfig(level=logging.WARN)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory

@@ -12,25 +12,28 @@ except metadata.PackageNotFoundError:
 
 if TYPE_CHECKING:
     from agents.diffusion_policy_state import (  # noqa: F401
-        ConditionalUnet1D,
         DP_CFG,
+        ConditionalUnet1D,
         DiffusionPolicy,
         EMAModel,
     )
     from agents.diffusion_policy_vision import (  # noqa: F401
-        DiffusionPolicyVision,
         VISION_DP_CFG,
+        DiffusionPolicyVision,
     )
     from agents.ibrl_base_agent import Agent  # noqa: F401
     from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
     from datasets.attractor import AttractorTrajectoryDataset  # noqa: F401
     from datasets.demonstration import DemonstrationDataset  # noqa: F401
-    from datasets.pushert import PushTStateDataset, download_dataset  # noqa: F401
     from datasets.state import StateDataset  # noqa: F401
     from datasets.vision import ImageStateDataset  # noqa: F401
     from envs.mocap_control import MocapReach  # noqa: F401
     from envs.pipe_insert_2 import PipeInsert2  # noqa: F401
     from envs.pushert import PushTEnv  # noqa: F401
+    from examples.datasets.pushert import (  # noqa: F401
+        PushTStateDataset,
+        download_dataset,
+    )
     from trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
     from trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
     from utils.datahandler import DataHandler  # noqa: F401

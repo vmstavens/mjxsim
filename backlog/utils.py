@@ -9,7 +9,6 @@ import os
 import pickle
 import subprocess
 from collections import deque
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -19,13 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
-
-# import the skrl components to build the RL system
-from datasets.pushert import normalize_data, unnormalize_data
-from skrl import logger
-from skrl.envs.torch import load_isaacgym_env_preview4, wrap_env
+from skrl.envs.torch import wrap_env
 from skrl.envs.wrappers.torch import Wrapper
 from skrl.memories.torch import RandomMemory
 
@@ -46,18 +39,12 @@ from testing import wrappers as wrap
 from testing.envs.pipe_insert import PipeInsert
 from testing.envs.pipe_insert_2 import PipeInsert2
 from testing.envs.pipe_insert_3 import PipeInsert3
-from testing.envs.xpose import XPose
 from testing.experiments.trainer.sequential_trainer_plus import SequentialTrainerPlus
-from testing.experiments.trainer.supervised_trainer import (
-    SUPERVISED_TRAINER_DEFAULT_CONFIG,
-    SupervisedTrainer,
-)
 
 # from skrl.agents.torch.ppo import PPO, PPO_DEFAULT_CONFIG
-from testing.shen.BC import BC, BC_DEFAULT_CONFIG
+from testing.shen.BC import BC_DEFAULT_CONFIG
 from testing.shen.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
-    DiffusionPolicy,
 )
 from testing.shen.dp_models import ConditionalUnet1D, EMAModel
 
@@ -67,8 +54,13 @@ from testing.shen.dp_models import ConditionalUnet1D, EMAModel
 from testing.shen.drlr import DRLR_DEFAULT_CONFIG
 from testing.shen.ibrl_rl import IBRL_RL_DEFAULT_CONFIG
 from testing.shen.ibrl_sac_o_o2_v2 import IBRL_SAC_DEFAULT_CONFIG
-from testing.shen.ppo import PPO, PPO_DEFAULT_CONFIG
+from testing.shen.ppo import PPO_DEFAULT_CONFIG
 from testing.train.demon import TransitionDataset
+from torch.utils.data import Dataset
+from tqdm import tqdm
+
+# import the skrl components to build the RL system
+from examples.datasets.pushert import normalize_data, unnormalize_data
 
 
 class PipeInsertDataset(Dataset):
@@ -404,11 +396,23 @@ class PPODeterministicActor(DeterministicMixin, Model):
 #         outputs["raw_mean_actions"] = mean_actions
 #         return actions, log_prob, outputs
 
+
 class SAC_StochasticActor(GaussianMixin, Model):
-    def __init__(self, observation_space, action_space, device, clip_actions=False,
-                 clip_log_std=True, min_log_std=-20, max_log_std=2, reduction="sum"):
+    def __init__(
+        self,
+        observation_space,
+        action_space,
+        device,
+        clip_actions=False,
+        clip_log_std=True,
+        min_log_std=-20,
+        max_log_std=2,
+        reduction="sum",
+    ):
         Model.__init__(self, observation_space, action_space, device)
-        GaussianMixin.__init__(self, clip_actions, clip_log_std, min_log_std, max_log_std, reduction)
+        GaussianMixin.__init__(
+            self, clip_actions, clip_log_std, min_log_std, max_log_std, reduction
+        )
 
         self.linear_layer_1 = nn.Linear(self.num_observations, 256)
         self.linear_layer_2 = nn.Linear(256, 256)
@@ -421,6 +425,7 @@ class SAC_StochasticActor(GaussianMixin, Model):
         x = F.relu(self.linear_layer_2(x))
         return torch.tanh(self.action_layer(x)), self.log_std_parameter, {}
 
+
 class Critic(DeterministicMixin, Model):
     def __init__(self, observation_space, action_space, device, clip_actions=False):
         Model.__init__(self, observation_space, action_space, device)
@@ -431,10 +436,13 @@ class Critic(DeterministicMixin, Model):
         self.linear_layer_3 = nn.Linear(256, 1)
 
     def compute(self, inputs, role):
-        x = F.relu(self.linear_layer_1(torch.cat([inputs["states"], inputs["taken_actions"]], dim=1)))
+        x = F.relu(
+            self.linear_layer_1(
+                torch.cat([inputs["states"], inputs["taken_actions"]], dim=1)
+            )
+        )
         x = F.relu(self.linear_layer_2(x))
         return self.linear_layer_3(x), {}
-
 
 
 class SAC_Critic(DeterministicMixin, Model):
@@ -1029,10 +1037,18 @@ def get_dp_models(env: Wrapper, config: dict) -> tuple[dict, EMAModel]:
 def get_sac_models(env: Wrapper) -> dict:
     models_SAC = {}
     models_SAC["policy"] = SAC_StochasticActor(
-        env.observation_space, env.action_space, env.device, clip_actions=True, clip_log_std=True
+        env.observation_space,
+        env.action_space,
+        env.device,
+        clip_actions=True,
+        clip_log_std=True,
     )
-    models_SAC["critic_1"] = SAC_Critic(env.observation_space, env.action_space, env.device)
-    models_SAC["critic_2"] = SAC_Critic(env.observation_space, env.action_space, env.device)
+    models_SAC["critic_1"] = SAC_Critic(
+        env.observation_space, env.action_space, env.device
+    )
+    models_SAC["critic_2"] = SAC_Critic(
+        env.observation_space, env.action_space, env.device
+    )
     models_SAC["target_critic_1"] = SAC_Critic(
         env.observation_space, env.action_space, env.device
     )
@@ -1045,6 +1061,7 @@ def get_sac_models(env: Wrapper) -> dict:
         model.init_parameters(method_name="normal_", mean=0.0, std=0.1)
 
     return models_SAC
+
 
 def get_dp_config(exp_name: str, env: Wrapper, wandb: bool = False) -> dict:
     dp_config = DIFFUSION_POLICY_STATE_DEFAULT_CONFIG.copy()
@@ -1149,6 +1166,7 @@ def get_ibrl_config(exp_name: str, env) -> dict:
     cfg_IBRL["experiment"]["experiment_name"] = exp_name
     cfg_IBRL["experiment"]["wandb"] = True
     return cfg_IBRL
+
 
 # def _get_ibrl_sac_dp_config():
 #     test = {
@@ -1306,6 +1324,7 @@ def get_ibrl_config(exp_name: str, env) -> dict:
 #   }
 # }
 
+
 def get_ibrl_sac_dp_config(exp_name, env, wandb):
     cfg = IBRL_SAC_DEFAULT_CONFIG.copy()
 
@@ -1326,13 +1345,13 @@ def get_ibrl_sac_dp_config(exp_name, env, wandb):
     cfg["discount_factor"] = 0.99
     cfg["batch_size"] = 128
     cfg["random_timesteps"] = 0  # Add some random exploration at the start
-    cfg["learning_starts"] = 0   # Start learning after some experience
+    cfg["learning_starts"] = 0  # Start learning after some experience
     cfg["learn_entropy"] = True
     # cfg["learn_entropy"] = True
-    cfg["grad_norm_clip"] = 1.0     # Add gradient clipping for stability
-    cfg["learning_rate"] = 3e-4     # Standard SAC learning rate
-    cfg["initial_entropy_value"] = 0.01     # Entropy learning rate
-    cfg["entropy_learning_rate"] = 3e-4     # Entropy learning rate
+    cfg["grad_norm_clip"] = 1.0  # Add gradient clipping for stability
+    cfg["learning_rate"] = 3e-4  # Standard SAC learning rate
+    cfg["initial_entropy_value"] = 0.01  # Entropy learning rate
+    cfg["entropy_learning_rate"] = 3e-4  # Entropy learning rate
     cfg["num_envs"] = env.num_envs
     cfg["target_selection_mode"] = "greedy"
     cfg["experiment"]["write_interval"] = 100
@@ -1355,6 +1374,7 @@ def get_ibrl_sac_dp_config(exp_name, env, wandb):
 
     return cfg
 
+
 def get_bc_models(env) -> dict:
     device = env.device
     models_BC = {}
@@ -1368,7 +1388,7 @@ def get_bc_models(env) -> dict:
 
 def get_drlr_config(exp_name: str, env, wandb: bool = True) -> dict:
     device = env.device
-    
+
     # DRLR_DEFAULT_CONFIG = {
     #     "gradient_steps": 1,            # gradient steps
     #     "batch_size": 64,               # training batch size
@@ -1427,20 +1447,17 @@ def get_drlr_config(exp_name: str, env, wandb: bool = True) -> dict:
     cfg_IBRL["discount_factor"] = 0.99
     cfg_IBRL["batch_size"] = 128
     cfg_IBRL["random_timesteps"] = 0  # Add some random exploration at the start
-    cfg_IBRL["learning_starts"] = 0   # Start learning after some experience
+    cfg_IBRL["learning_starts"] = 0  # Start learning after some experience
     cfg_IBRL["learn_entropy"] = True
-    cfg_IBRL["grad_norm_clip"] = 1.0     # Add gradient clipping for stability
-    cfg_IBRL["learning_rate"] = 3e-4     # Standard SAC learning rate
-    cfg_IBRL["initial_entropy_value"] = 0.1     # Entropy learning rate
-    cfg_IBRL["RED-Q_enable"] = False     #enable RED-Q
-    cfg_IBRL["offline"] = False       # not important here
+    cfg_IBRL["grad_norm_clip"] = 1.0  # Add gradient clipping for stability
+    cfg_IBRL["learning_rate"] = 3e-4  # Standard SAC learning rate
+    cfg_IBRL["initial_entropy_value"] = 0.1  # Entropy learning rate
+    cfg_IBRL["RED-Q_enable"] = False  # enable RED-Q
+    cfg_IBRL["offline"] = False  # not important here
     cfg_IBRL["num_envs"] = env.num_envs
     cfg_IBRL["demo_file"] = "./Demos/cab_imperfect.csv"
     cfg_IBRL["experiment"]["write_interval"] = 100
     cfg_IBRL["experiment"]["checkpoint_interval"] = 1000
-
-
-
 
     # cfg_IBRL["exploration"]["noise"] = GaussianNoise(0, 0.1, device=device)
     # # cfg_IBRL["exploration"]["noise"] = None

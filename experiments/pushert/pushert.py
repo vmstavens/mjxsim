@@ -18,8 +18,7 @@ from testing.shen.diffusion_policy_state import DiffusionPolicy
 from testing.shen.dp_models import ConditionalUnet1D, EMAModel
 from torch.utils.data import DataLoader, Dataset
 
-from datasets.pushert import normalize_data
-from testing.envs.pipe_insert import PipeInsert
+from examples.datasets.pushert import normalize_data
 
 
 class PipeInsertDataset(Dataset):

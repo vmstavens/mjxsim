@@ -1,8 +1,8 @@
 """Dataset helpers for demonstrations and offline RL."""
 
+from examples.datasets.pushert import PushTStateDataset, download_dataset
 from .attractor import AttractorTrajectoryDataset
 from .demonstration import DemonstrationDataset
-from .pushert import PushTStateDataset, download_dataset
 from .state import StateDataset
 from .vision import ImageStateDataset
 

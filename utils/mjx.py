@@ -3,6 +3,7 @@ from typing import Union
 
 import jax.numpy as jp
 import jaxlie as jaxl
+import mujoco as mj
 import mujoco.mjx as mjx
 
 
@@ -34,7 +35,9 @@ class ObjType(Enum):
     GEOM = int(mjx.ObjType.GEOM)
     SITE = int(mjx.ObjType.SITE)
     CAMERA = int(mjx.ObjType.CAMERA)
-    JOINT = int(mjx.ObjType.BODY)
+    JOINT = int(mj.mjtObj.mjOBJ_JOINT)
+    KEYFRAME = int(mj.mjtObj.mjOBJ_KEY)
+    KEY = int(mj.mjtObj.mjOBJ_KEY)
 
 
 def get_number_of(model: mjx.Model, obj_type: ObjType) -> int:
@@ -64,6 +67,7 @@ def get_number_of(model: mjx.Model, obj_type: ObjType) -> int:
         ObjType.SITE: model.nsite,
         ObjType.CAMERA: model.ncam,
         ObjType.JOINT: model.njnt,
+        ObjType.KEYFRAME: model.nkey,
     }
 
     if obj_type not in type_to_attribute:
@@ -338,3 +342,66 @@ def get_pose(
     xR = _xmat[id]
     xR = jaxl.SO3.from_matrix(xR.reshape(3, 3))
     return jaxl.SE3.from_rotation_and_translation(rotation=xR, translation=xt)
+
+
+def set_state(
+    model: mjx.Model, data: mjx.Data, identifier: Union[int, str], obj_type: ObjType
+) -> mjx.Data:
+    """
+    Sets simulation state from a MuJoCo keyframe.
+
+    The keyframe may contain any of MuJoCo's key state components. Components
+    that do not exist for the model, such as ``ctrl`` for a model without
+    actuators or ``mocap`` arrays for a model without mocap bodies, are skipped.
+
+    Parameters
+    ----------
+    model : mjx.Model
+        The MuJoCo MJX model containing the keyframe.
+    data : mjx.Data
+        The simulation data to update.
+    identifier : int or str
+        The keyframe ID or name.
+    obj_type : ObjType
+        Must be ``ObjType.KEYFRAME`` or ``ObjType.KEY``.
+
+    Returns
+    -------
+    mjx.Data
+        Updated data with keyframe state applied and derived quantities
+        refreshed with ``mjx.forward``.
+    """
+    if obj_type is not ObjType.KEYFRAME:
+        raise ValueError(
+            f"set_state only supports keyframes, got obj_type {obj_type.name}."
+        )
+
+    assert does_exist(model, identifier, obj_type)
+
+    if isinstance(identifier, str):
+        key_id = mjx.name2id(model, obj_type.value, identifier)
+    else:
+        key_id = identifier
+
+    replace_kwargs = {"time": jp.asarray(model.key_time[key_id])}
+
+    if model.nq:
+        replace_kwargs["qpos"] = jp.asarray(model.key_qpos[key_id])
+    if model.nv:
+        replace_kwargs["qvel"] = jp.asarray(model.key_qvel[key_id])
+    if model.na:
+        replace_kwargs["act"] = jp.asarray(model.key_act[key_id])
+    if model.nu:
+        replace_kwargs["ctrl"] = jp.asarray(model.key_ctrl[key_id])
+    if model.nmocap:
+        replace_kwargs["mocap_pos"] = jp.asarray(model.key_mpos[key_id]).reshape(
+            model.nmocap, 3
+        )
+        replace_kwargs["mocap_quat"] = jp.asarray(model.key_mquat[key_id]).reshape(
+            model.nmocap, 4
+        )
+
+    data = data.replace(**replace_kwargs)
+    if model.nv == 0:
+        return data
+    return mjx.forward(model, data)

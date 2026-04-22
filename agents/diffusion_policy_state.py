@@ -3,7 +3,6 @@ import dataclasses
 import logging
 import math
 import os
-from collections.abc import Mapping
 from typing import Any, Optional, Union
 
 import torch
@@ -22,6 +21,16 @@ logger.setLevel(logging.WARNING)
 logger.propagate = False
 
 
+def _resolve_device(device: str | torch.device | None = None) -> str:
+    if device is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    device = str(device)
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        logger.warning("CUDA requested but unavailable; falling back to CPU")
+        return "cpu"
+    return device
+
+
 @dataclasses.dataclass(kw_only=True)
 class LRSchedulerCfg:
     """Configuration for the diffusion policy learning rate scheduler."""
@@ -31,14 +40,6 @@ class LRSchedulerCfg:
 
     num_training_steps: int = 10_000
     """Total number of training steps used by the scheduler."""
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Dictionary-style getter for legacy call sites."""
-        return getattr(self, key, default)
-
-    def __getitem__(self, key: str) -> Any:
-        """Dictionary-style item access for legacy call sites."""
-        return getattr(self, key)
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -102,12 +103,10 @@ class DP_CFG(AgentCfg):
     prediction_type: str = "epsilon"
     """Prediction target used by the DDPMScheduler."""
 
-    lr_scheduler_cfg: LRSchedulerCfg | dict[str, int] = dataclasses.field(
-        default_factory=LRSchedulerCfg
-    )
+    lr_scheduler_cfg: LRSchedulerCfg = dataclasses.field(default_factory=LRSchedulerCfg)
     """Learning rate scheduler settings."""
 
-    experiment: ExperimentCfg | dict[str, Any] = dataclasses.field(
+    experiment: ExperimentCfg = dataclasses.field(
         default_factory=lambda: ExperimentCfg(
             write_interval=500,
             checkpoint_interval=1000,
@@ -116,70 +115,11 @@ class DP_CFG(AgentCfg):
     """Experiment settings."""
 
     def expand(self) -> None:
-        """Expand nested dictionaries into dataclass configs."""
+        """Expand the base agent configuration."""
         super().expand()
-        if isinstance(self.lr_scheduler_cfg, dict):
-            self.lr_scheduler_cfg = LRSchedulerCfg(**self.lr_scheduler_cfg)
-        if isinstance(self.experiment, dict):
-            self.experiment = ExperimentCfg(**self.experiment)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a dictionary representation of the configuration."""
-        self.expand()
-        return dataclasses.asdict(self)
-
-    def copy(self) -> dict[str, Any]:
-        """Return a deep-copy dictionary for legacy call sites."""
-        return copy.deepcopy(self.to_dict())
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Dictionary-style getter for legacy call sites."""
-        return getattr(self, key, default)
-
-    def __getitem__(self, key: str) -> Any:
-        """Dictionary-style item access for legacy call sites."""
-        return getattr(self, key)
 
 
 DIFFUSION_POLICY_STATE_DEFAULT_CONFIG = DP_CFG()
-
-
-def _coerce_dp_cfg(config: DP_CFG | Mapping[str, Any] | None) -> DP_CFG:
-    """Build a diffusion policy config from a dataclass or legacy dictionary."""
-    if config is None:
-        cfg = DP_CFG()
-    elif isinstance(config, DP_CFG):
-        cfg = copy.deepcopy(config)
-    elif isinstance(config, Mapping):
-        cfg = DP_CFG()
-        for key, value in config.items():
-            if not hasattr(cfg, key):
-                raise ValueError(f"Invalid diffusion policy config key: {key}")
-            setattr(cfg, key, copy.deepcopy(value))
-    else:
-        raise TypeError(
-            "Diffusion policy config must be a DP_CFG, mapping, or None "
-            f"(got {type(config).__name__})"
-        )
-    cfg.expand()
-    return cfg
-
-
-def _mapping_to_dataclass_instance(name: str, values: Mapping[str, Any]) -> Any:
-    """Convert a mapping to a dataclass instance for skrl's init API."""
-    fields = []
-    for key, value in values.items():
-        default = copy.deepcopy(value)
-        fields.append(
-            (
-                key,
-                Any,
-                dataclasses.field(
-                    default_factory=lambda default=default: copy.deepcopy(default)
-                ),
-            )
-        )
-    return dataclasses.make_dataclass(name, fields, kw_only=True)()
 
 
 class ModuleWrapper(DeterministicMixin, Model):
@@ -191,10 +131,7 @@ class ModuleWrapper(DeterministicMixin, Model):
         action_space=None,
         clip_actions=False,
     ):
-        if device is None:
-            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = device
+        self.device = _resolve_device(device)
         # init base classes
         Model.__init__(
             self,
@@ -205,6 +142,7 @@ class ModuleWrapper(DeterministicMixin, Model):
         DeterministicMixin.__init__(self, clip_actions=clip_actions)
 
         self._unwrapped_module = module
+        self.to(self.device)
 
     def compute(self, inputs: dict, role):
         # pick states and actions if available
@@ -307,17 +245,17 @@ class ConditionalResidualBlock1D(nn.Module):
 
 
 class ConditionalUnet1D(nn.Module):
-    def __init__(self, a_dim: int, o_dim: int, config: DP_CFG | Mapping[str, Any]):
+    def __init__(self, a_dim: int, o_dim: int, config: DP_CFG):
         super().__init__()
-        self.config = config
+        self.config: DP_CFG = config
 
         self._a_dim: int = a_dim
         self._o_dim: int = o_dim
-        self._down_dims: list[int] = config["down_dims"]
-        self._diffusion_step_embed_dim: int = config["diffusion_step_embed_dim"]
-        self._global_cond_dim: int = self._o_dim * self.config["obs_horizon"]
-        self._kernel_size: int = config["kernel_size"]
-        self._n_groups: int = config["n_groups"]
+        self._down_dims: list[int] = config.down_dims
+        self._diffusion_step_embed_dim: int = config.diffusion_step_embed_dim
+        self._global_cond_dim: int = self._o_dim * config.obs_horizon
+        self._kernel_size: int = config.kernel_size
+        self._n_groups: int = config.n_groups
 
         all_dims = [self._a_dim] + list(self._down_dims)
         start_dim = self._down_dims[0]
@@ -466,14 +404,25 @@ class EMAModel:
 
     def step(self, parameters: list[torch.Tensor]):
         parameters = list(parameters)
-        for s_param, param in zip(self.shadow_params, parameters):
+        for i, (s_param, param) in enumerate(zip(self.shadow_params, parameters)):
             if param.requires_grad:
+                if s_param.device != param.device:
+                    s_param = s_param.to(param.device)
+                    self.shadow_params[i] = s_param
                 s_param.data = s_param.data * self.power + param.data * (1 - self.power)
 
     def copy_to(self, parameters: list[torch.Tensor]):
         parameters = list(parameters)
-        for s_param, param in zip(self.shadow_params, parameters):
+        for i, (s_param, param) in enumerate(zip(self.shadow_params, parameters)):
+            if s_param.device != param.device:
+                s_param = s_param.to(param.device)
+                self.shadow_params[i] = s_param
             param.data.copy_(s_param.data)
+
+    def to(self, device: str | torch.device):
+        device = _resolve_device(device)
+        self.shadow_params = [p.to(device) for p in self.shadow_params]
+        return self
 
 
 class DiffusionPolicy(Agent):
@@ -488,29 +437,31 @@ class DiffusionPolicy(Agent):
         dataloader=None,
         action_space=None,
         memory=None,
-        config=None,
+        config: DP_CFG | None = None,
         stats: Optional[dict[str, Any]] = None,
     ):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.config = _coerce_dp_cfg(config)
+        self.device = _resolve_device(device)
+        _config = DP_CFG() if config is None else copy.deepcopy(config)
+        _config.expand()
+        self.config: DP_CFG = _config
         self.stats = stats
 
         self._a_dim: int = a_dim
         self._o_dim: int = o_dim
 
         # Load config values
-        self._num_diffusion_iters: int = self.config.num_diffusion_iters
-        self._beta_schedule: str = self.config.beta_schedule
-        self._clip_sample: bool = self.config.clip_sample
-        self._prediction_type: str = self.config.prediction_type
-        self._ema_power: float = self.config.ema_power
-        self._learning_rate: float = self.config.learning_rate
-        self._weight_decay: float = self.config.weight_decay
-        self._num_warmup_steps: int = self.config.lr_scheduler_cfg.num_warmup_steps
-        self._num_training_steps: int = self.config.lr_scheduler_cfg.num_training_steps
-        self._obs_horizon: int = self.config.obs_horizon
-        self._pred_horizon: int = self.config.pred_horizon
-        self._act_horizon: int = self.config.action_horizon
+        self._num_diffusion_iters: int = _config.num_diffusion_iters
+        self._beta_schedule: str = _config.beta_schedule
+        self._clip_sample: bool = _config.clip_sample
+        self._prediction_type: str = _config.prediction_type
+        self._ema_power: float = _config.ema_power
+        self._learning_rate: float = _config.learning_rate
+        self._weight_decay: float = _config.weight_decay
+        self._num_warmup_steps: int = _config.lr_scheduler_cfg.num_warmup_steps
+        self._num_training_steps: int = _config.lr_scheduler_cfg.num_training_steps
+        self._obs_horizon: int = _config.obs_horizon
+        self._pred_horizon: int = _config.pred_horizon
+        self._act_horizon: int = _config.action_horizon
 
         # Save models
         self.models = {
@@ -518,7 +469,7 @@ class DiffusionPolicy(Agent):
         }
         self.model = self.models["model"]
         self.ema_model = self.models["ema_model"]
-        self.ema = ema
+        self.ema = ema.to(self.device)
 
         super().__init__(
             cfg=self.config,
@@ -526,7 +477,7 @@ class DiffusionPolicy(Agent):
             memory=memory,
             observation_space=observation_space,
             action_space=action_space,
-            device=device,
+            device=self.device,
         )
 
         # Noise scheduler
@@ -540,9 +491,7 @@ class DiffusionPolicy(Agent):
         # Optimizer + LR scheduler
         self.optimizer = None
         self.lr_scheduler = None
-        self.configure_optimizers(
-            dataloader=dataloader, num_epochs=self.config.num_epochs
-        )
+        self.configure_optimizers(dataloader=dataloader, num_epochs=_config.num_epochs)
 
         # Register for checkpointing
         self.checkpoint_modules = {
@@ -553,12 +502,10 @@ class DiffusionPolicy(Agent):
         }
 
         self.is_trained = False
-        self.set_mode("train")
+        self.enable_training_mode(True)
 
-    def init(self, trainer_cfg=None):
-        self.set_mode("train")
-        if isinstance(trainer_cfg, Mapping):
-            trainer_cfg = _mapping_to_dataclass_instance("TrainerCfg", trainer_cfg)
+    def init(self, trainer_cfg: dict[str, Any] | None = None):
+        self.enable_training_mode(True)
         super().init(trainer_cfg=trainer_cfg)
 
     def pre_interaction(self, *, timestep: int, timesteps: int) -> None:
@@ -723,19 +670,6 @@ class DiffusionPolicy(Agent):
 
         return noisy_actions, None, {}
 
-    def set_mode(self, mode: str):
-        # print(f"in set_mode of DP with mode '{mode}'")
-
-        if mode == "eval":
-            # print("setting to 'eval'")
-            self.eval()
-        elif mode == "train":
-            self.train()
-        else:
-            raise ValueError(
-                f"Wrong Mode: choose either 'train' or 'eval', but got '{mode}'"
-            )
-
     def eval(self) -> None:
         self.model.eval()
         self.ema_model.eval()
@@ -744,9 +678,29 @@ class DiffusionPolicy(Agent):
         self.model.train()
         self.ema_model.train()
 
+    def set_mode(self, mode: str) -> None:
+        if mode == "train":
+            self.train()
+        elif mode == "eval":
+            self.eval()
+        else:
+            raise ValueError(f"Unsupported mode: {mode}")
+
+    def enable_training_mode(
+        self, enabled: bool = True, *, apply_to_models: bool = False
+    ) -> None:
+        super().enable_training_mode(enabled, apply_to_models=False)
+        if enabled:
+            self.train()
+        else:
+            self.eval()
+
     def to(self, device: str = "cuda"):
+        self.device = _resolve_device(device)
         for _, v in self.models.items():
-            v.to(device)
+            v.to(self.device)
+        self.ema.to(self.device)
+        return self
 
     def save(self, path: str):
         """Save model weights and configuration."""
@@ -770,6 +724,7 @@ class DiffusionPolicy(Agent):
     @classmethod
     def load(cls, path: str, a_dim: int = None, o_dim: int = None, device: str = None):
         """Load model from checkpoint."""
+        device = _resolve_device(device)
         checkpoint = torch.load(path, map_location=device, weights_only=False)
         config = checkpoint["config"]
         a_dim = a_dim if a_dim is not None else checkpoint.get("a_dim")
@@ -777,10 +732,9 @@ class DiffusionPolicy(Agent):
         if a_dim is None or o_dim is None:
             raise ValueError("Both action and observation dims must be provided.")
 
-        device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         dp_models = {}
         dp_models["model"] = ConditionalUnet1D(a_dim=a_dim, o_dim=o_dim, config=config)
-        ema = EMAModel(dp_models["model"].parameters(), power=config["ema_power"])
+        ema = EMAModel(dp_models["model"].parameters(), power=config.ema_power)
         dp_models["ema_model"] = ConditionalUnet1D(
             a_dim=a_dim, o_dim=o_dim, config=config
         )

@@ -10,9 +10,14 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from agents.diffusion_policy_state import DP_CFG, ConditionalUnet1D, DiffusionPolicy, EMAModel
-from datasets.pushert import PushTStateDataset, download_dataset, save_video
+from agents.diffusion_policy_state import (
+    DP_CFG,
+    ConditionalUnet1D,
+    DiffusionPolicy,
+    EMAModel,
+)
 from envs.pushert import PushTEnv
+from examples.datasets.pushert import PushTStateDataset, download_dataset, save_video
 from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
 
 logging.basicConfig(level=logging.INFO)

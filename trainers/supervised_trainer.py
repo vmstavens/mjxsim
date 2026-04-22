@@ -24,7 +24,7 @@ from agents.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
-from datasets.pushert import PushTStateDataset, download_dataset
+from examples.datasets.pushert import PushTStateDataset, download_dataset
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -197,7 +197,7 @@ class SupervisedTrainer:
                 self.config.write_interval > 0
                 and epoch % self.config.write_interval == 0
             ):
-                self.agent.write_tracking_data(epoch, self.epochs)
+                self.agent.write_tracking_data(timestep=epoch, timesteps=self.epochs)
 
 
 def rollout_pusht(

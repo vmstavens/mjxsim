@@ -26,7 +26,7 @@ from matplotlib import pyplot as plt
 from skrl.agents.torch.base import ExperimentCfg
 from torch.utils.data import DataLoader
 
-from datasets.pushert import PushTStateDataset, download_dataset
+from examples.datasets.pushert import PushTStateDataset, download_dataset
 from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
 from utils.datasets import split_dataset
 
@@ -259,7 +259,9 @@ def main() -> None:
     def save_loss_plot() -> None:
         epochs = [item[0] for item in loss_history]
         train_losses = [item[1] for item in loss_history]
-        val_points = [(item[0], item[2]) for item in loss_history if item[2] is not None]
+        val_points = [
+            (item[0], item[2]) for item in loss_history if item[2] is not None
+        ]
 
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, train_losses, label="train")

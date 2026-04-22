@@ -1,34 +1,28 @@
 import copy
-import glob
 import logging
 import os
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
-from brax import envs
-from gym_pusht.envs import PushTEnv
-from gymnasium.vector import SyncVectorEnv
-from skrl.envs.torch import wrap_env
-from skrl.memories.torch import RandomMemory
-from skrl.trainers.torch import SequentialTrainer
-from skrl.utils import set_seed
-
-import agents.diffusion_policy_state as dp
-from agents.diffusion_policy_state import DiffusionPolicy
 
 # from skrl.agents.torch.sac.sac import SAC_DEFAULT_CONFIG
 from agents.ibrl_sac_o_o2 import IBRL, IBRL_SAC_DEFAULT_CONFIG
 from agents.models import ibrl_sac as ibrl
-from datasets.pushert import PushTStateDataset
-from envs.brax.ur10e import UR10e
+from gym_pusht.envs import PushTEnv
+from gymnasium.vector import SyncVectorEnv
+from skrl.envs.torch import wrap_env
+from skrl.memories.torch import RandomMemory
+from skrl.utils import set_seed
 from trainers.sequential_trainer_x import (
     SEQUENTIAL_TRAINER_X_DEFAULT_CONFIG,
     SequentialTrainerX,
 )
+
+import agents.diffusion_policy_state as dp
+from agents.diffusion_policy_state import DiffusionPolicy
+from examples.datasets.pushert import PushTStateDataset
 from utils import demo
-from utils.datasets import DataHandler, folder_to_memory
 
 logging.basicConfig(level=logging.WARN)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory
