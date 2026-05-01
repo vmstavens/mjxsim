@@ -23,6 +23,17 @@ if TYPE_CHECKING:
     )
     from agents.ibrl_base_agent import Agent  # noqa: F401
     from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from agents.variational_autoencoder import (  # noqa: F401
+        VAE_CFG,
+        VAE_STATE_CFG,
+        VAE_VISION_CFG,
+        VariationalAutoencoder,
+        VariationalAutoencoderAgent,
+        VariationalAutoencoderState,
+        VariationalAutoencoderStateAgent,
+        VariationalAutoencoderVision,
+        VariationalAutoencoderVisionAgent,
+    )
     from datasets.attractor import AttractorTrajectoryDataset  # noqa: F401
     from datasets.demonstration import DemonstrationDataset  # noqa: F401
     from datasets.state import StateDataset  # noqa: F401
@@ -59,6 +70,15 @@ _AGENT_EXPORTS = [
     "EMAModel",
     "IBRL",
     "IBRL_SAC_CFG",
+    "VAE_CFG",
+    "VAE_STATE_CFG",
+    "VAE_VISION_CFG",
+    "VariationalAutoencoder",
+    "VariationalAutoencoderAgent",
+    "VariationalAutoencoderState",
+    "VariationalAutoencoderStateAgent",
+    "VariationalAutoencoderVision",
+    "VariationalAutoencoderVisionAgent",
     "VISION_DP_CFG",
 ]
 
@@ -99,6 +119,15 @@ _EXPORT_MODULES = {
     "EMAModel": "agents.diffusion_policy_state",
     "IBRL": "agents.ibrl_sac",
     "IBRL_SAC_CFG": "agents.ibrl_sac",
+    "VAE_CFG": "agents.variational_autoencoder",
+    "VAE_STATE_CFG": "agents.variational_autoencoder",
+    "VAE_VISION_CFG": "agents.variational_autoencoder",
+    "VariationalAutoencoder": "agents.variational_autoencoder",
+    "VariationalAutoencoderAgent": "agents.variational_autoencoder",
+    "VariationalAutoencoderState": "agents.variational_autoencoder",
+    "VariationalAutoencoderStateAgent": "agents.variational_autoencoder",
+    "VariationalAutoencoderVision": "agents.variational_autoencoder",
+    "VariationalAutoencoderVisionAgent": "agents.variational_autoencoder",
     "VISION_DP_CFG": "agents.diffusion_policy_vision",
     "AttractorTrajectoryDataset": "datasets.attractor",
     "DemonstrationDataset": "datasets.demonstration",
@@ -123,6 +152,12 @@ _OPTIONAL_DEPENDENCIES = {
     "DiffusionPolicy": "torch",
     "DiffusionPolicyVision": "torch",
     "IBRL": "skrl",
+    "VariationalAutoencoder": "torch",
+    "VariationalAutoencoderAgent": "skrl",
+    "VariationalAutoencoderState": "torch",
+    "VariationalAutoencoderStateAgent": "skrl",
+    "VariationalAutoencoderVision": "torch",
+    "VariationalAutoencoderVisionAgent": "skrl",
     "MocapReach": "mujoco",
     "PipeInsert2": "mujoco",
     "PushTEnv": "gym",

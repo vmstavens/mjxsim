@@ -90,6 +90,7 @@ examples = [
     "shapely",
     "skrl>=2.0.0",
     "torch",
+    "torchvision>=0.25.0",
     "tqdm",
     "tyro",
     "zarr",

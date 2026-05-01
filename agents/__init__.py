@@ -18,6 +18,19 @@ if TYPE_CHECKING:
     )
     from agents.ibrl_base_agent import Agent  # noqa: F401
     from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from agents.variational_autoencoder import (  # noqa: F401
+        Decoder,
+        Encoder,
+        VAE_CFG,
+        VAE_STATE_CFG,
+        VAE_VISION_CFG,
+        VariationalAutoencoder,
+        VariationalAutoencoderAgent,
+        VariationalAutoencoderState,
+        VariationalAutoencoderStateAgent,
+        VariationalAutoencoderVision,
+        VariationalAutoencoderVisionAgent,
+    )
 
 _EXPORT_MODULES = {
     "Agent": "agents.ibrl_base_agent",
@@ -28,6 +41,17 @@ _EXPORT_MODULES = {
     "EMAModel": "agents.diffusion_policy_state",
     "IBRL": "agents.ibrl_sac",
     "IBRL_SAC_CFG": "agents.ibrl_sac",
+    "VAE_CFG": "agents.variational_autoencoder",
+    "VAE_STATE_CFG": "agents.variational_autoencoder",
+    "VAE_VISION_CFG": "agents.variational_autoencoder",
+    "Encoder": "agents.variational_autoencoder",
+    "Decoder": "agents.variational_autoencoder",
+    "VariationalAutoencoder": "agents.variational_autoencoder",
+    "VariationalAutoencoderAgent": "agents.variational_autoencoder",
+    "VariationalAutoencoderState": "agents.variational_autoencoder",
+    "VariationalAutoencoderStateAgent": "agents.variational_autoencoder",
+    "VariationalAutoencoderVision": "agents.variational_autoencoder",
+    "VariationalAutoencoderVisionAgent": "agents.variational_autoencoder",
     "VISION_DP_CFG": "agents.diffusion_policy_vision",
 }
 

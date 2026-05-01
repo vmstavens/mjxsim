@@ -3,6 +3,7 @@
 typings/
 runs/
 examples/.runs/
+examples/.data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
