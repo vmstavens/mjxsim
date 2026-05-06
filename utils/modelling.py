@@ -75,7 +75,7 @@ def pipe(
     return mj.MjSpec().from_string(_XML)
 
 
-def mjx_cable(
+def cable(
     *,
     model_name: str = "cable",
     prefix: str = "cable:",
