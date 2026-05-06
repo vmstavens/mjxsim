@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union
+from typing import Any, Union
 
 import jax.numpy as jp
 import jaxlie as jaxl
@@ -345,63 +345,117 @@ def get_pose(
 
 
 def set_state(
-    model: mjx.Model, data: mjx.Data, identifier: Union[int, str], obj_type: ObjType
+    model: mjx.Model,
+    data: mjx.Data,
+    identifier: Union[int, str] | None = None,
+    obj_type: ObjType = ObjType.KEYFRAME,
+    *,
+    time: Any | None = None,
+    qpos: Any | None = None,
+    qvel: Any | None = None,
+    act: Any | None = None,
+    ctrl: Any | None = None,
+    mocap_pos: Any | None = None,
+    mocap_quat: Any | None = None,
+    qacc: Any | None = None,
+    qfrc_applied: Any | None = None,
+    xfrc_applied: Any | None = None,
+    forward: bool = True,
 ) -> mjx.Data:
     """
-    Sets simulation state from a MuJoCo keyframe.
+    Sets simulation state components on MJX data.
 
-    The keyframe may contain any of MuJoCo's key state components. Components
+    If ``identifier`` is provided, the matching MuJoCo keyframe is applied
+    first. Explicit keyword components are then applied as overrides. Components
     that do not exist for the model, such as ``ctrl`` for a model without
-    actuators or ``mocap`` arrays for a model without mocap bodies, are skipped.
+    actuators or ``mocap`` arrays for a model without mocap bodies, are skipped
+    when reading from a keyframe.
 
     Parameters
     ----------
     model : mjx.Model
-        The MuJoCo MJX model containing the keyframe.
+        The MuJoCo MJX model.
     data : mjx.Data
         The simulation data to update.
     identifier : int or str
-        The keyframe ID or name.
+        Optional keyframe ID or name.
     obj_type : ObjType
-        Must be ``ObjType.KEYFRAME`` or ``ObjType.KEY``.
+        Must be ``ObjType.KEYFRAME`` or ``ObjType.KEY`` when ``identifier`` is
+        provided.
+    time, qpos, qvel, act, ctrl, mocap_pos, mocap_quat, qacc, qfrc_applied,
+    xfrc_applied
+        Optional state components to set directly. ``mocap_pos`` and
+        ``mocap_quat`` are reshaped to ``(model.nmocap, 3)`` and
+        ``(model.nmocap, 4)``.
+    forward : bool
+        Run ``mjx.forward`` after replacing components. Disable this if callers
+        need to set acceleration or applied-force fields after a forward pass.
 
     Returns
     -------
     mjx.Data
-        Updated data with keyframe state applied and derived quantities
-        refreshed with ``mjx.forward``.
+        Updated data.
     """
-    if obj_type is not ObjType.KEYFRAME:
+    if identifier is not None and obj_type is not ObjType.KEYFRAME:
         raise ValueError(
             f"set_state only supports keyframes, got obj_type {obj_type.name}."
         )
 
-    assert does_exist(model, identifier, obj_type)
+    replace_kwargs = {}
 
-    if isinstance(identifier, str):
-        key_id = mjx.name2id(model, obj_type.value, identifier)
-    else:
-        key_id = identifier
+    if identifier is not None:
+        assert does_exist(model, identifier, obj_type)
 
-    replace_kwargs = {"time": jp.asarray(model.key_time[key_id])}
+        if isinstance(identifier, str):
+            key_id = mjx.name2id(model, obj_type.value, identifier)
+        else:
+            key_id = identifier
 
-    if model.nq:
-        replace_kwargs["qpos"] = jp.asarray(model.key_qpos[key_id])
-    if model.nv:
-        replace_kwargs["qvel"] = jp.asarray(model.key_qvel[key_id])
-    if model.na:
-        replace_kwargs["act"] = jp.asarray(model.key_act[key_id])
-    if model.nu:
-        replace_kwargs["ctrl"] = jp.asarray(model.key_ctrl[key_id])
-    if model.nmocap:
-        replace_kwargs["mocap_pos"] = jp.asarray(model.key_mpos[key_id]).reshape(
-            model.nmocap, 3
-        )
-        replace_kwargs["mocap_quat"] = jp.asarray(model.key_mquat[key_id]).reshape(
-            model.nmocap, 4
-        )
+        replace_kwargs["time"] = jp.asarray(model.key_time[key_id])
+
+        if model.nq:
+            replace_kwargs["qpos"] = jp.asarray(model.key_qpos[key_id])
+        if model.nv:
+            replace_kwargs["qvel"] = jp.asarray(model.key_qvel[key_id])
+        if model.na:
+            replace_kwargs["act"] = jp.asarray(model.key_act[key_id])
+        if model.nu:
+            replace_kwargs["ctrl"] = jp.asarray(model.key_ctrl[key_id])
+        if model.nmocap:
+            replace_kwargs["mocap_pos"] = jp.asarray(model.key_mpos[key_id]).reshape(
+                model.nmocap, 3
+            )
+            replace_kwargs["mocap_quat"] = jp.asarray(model.key_mquat[key_id]).reshape(
+                model.nmocap, 4
+            )
+
+    component_values = {
+        "time": time,
+        "qpos": qpos,
+        "qvel": qvel,
+        "act": act,
+        "ctrl": ctrl,
+        "qacc": qacc,
+        "qfrc_applied": qfrc_applied,
+        "xfrc_applied": xfrc_applied,
+    }
+    replace_kwargs.update(
+        {
+            field_name: jp.asarray(value)
+            for field_name, value in component_values.items()
+            if value is not None
+        }
+    )
+
+    if mocap_pos is not None:
+        replace_kwargs["mocap_pos"] = jp.asarray(mocap_pos).reshape(model.nmocap, 3)
+    if mocap_quat is not None:
+        replace_kwargs["mocap_quat"] = jp.asarray(mocap_quat).reshape(model.nmocap, 4)
+
+    if not replace_kwargs:
+        return data
 
     data = data.replace(**replace_kwargs)
-    if model.nv == 0:
+    if not forward or model.nv == 0:
         return data
     return mjx.forward(model, data)

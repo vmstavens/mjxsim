@@ -61,3 +61,77 @@ def test_set_state_applies_keyframe_components_by_id():
     data = set_state(model, data, 0, ObjType.KEYFRAME)
 
     assert data.time == model.key_time[0]
+
+
+def test_set_state_applies_direct_components():
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="mocap" mocap="true" pos="0 0 0"/>
+        <body name="body" pos="0 0 0">
+          <joint name="hinge" type="hinge" axis="0 0 1"/>
+          <geom type="sphere" size="0.01" mass="1"/>
+        </body>
+      </worldbody>
+      <actuator>
+        <motor name="motor" joint="hinge" gear="1"/>
+      </actuator>
+    </mujoco>
+    """
+    model = mjx.put_model(mj.MjModel.from_xml_string(xml))
+    data = mjx.make_data(model)
+
+    qpos = jp.array([0.2])
+    qvel = jp.array([0.3])
+    ctrl = jp.array([0.4])
+    qacc = jp.array([0.5])
+    qfrc_applied = jp.array([0.6])
+    xfrc_applied = jp.ones((model.nbody, 6))
+    mocap_pos = jp.array([1.0, 2.0, 3.0])
+    mocap_quat = jp.array([1.0, 0.0, 0.0, 0.0])
+
+    data = set_state(
+        model,
+        data,
+        qpos=qpos,
+        qvel=qvel,
+        ctrl=ctrl,
+        qacc=qacc,
+        qfrc_applied=qfrc_applied,
+        xfrc_applied=xfrc_applied,
+        mocap_pos=mocap_pos,
+        mocap_quat=mocap_quat,
+        forward=False,
+    )
+
+    assert jp.allclose(data.qpos, qpos)
+    assert jp.allclose(data.qvel, qvel)
+    assert jp.allclose(data.ctrl, ctrl)
+    assert jp.allclose(data.qacc, qacc)
+    assert jp.allclose(data.qfrc_applied, qfrc_applied)
+    assert jp.allclose(data.xfrc_applied, xfrc_applied)
+    assert jp.allclose(data.mocap_pos, mocap_pos.reshape(model.nmocap, 3))
+    assert jp.allclose(data.mocap_quat, mocap_quat.reshape(model.nmocap, 4))
+
+
+def test_set_state_allows_direct_components_to_override_keyframe():
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="body" pos="0 0 0">
+          <joint name="hinge" type="hinge" axis="0 0 1"/>
+          <geom type="sphere" size="0.01" mass="1"/>
+        </body>
+      </worldbody>
+      <keyframe>
+        <key name="ready" qpos="0.1" qvel="0.2"/>
+      </keyframe>
+    </mujoco>
+    """
+    model = mjx.put_model(mj.MjModel.from_xml_string(xml))
+    data = mjx.make_data(model)
+
+    data = set_state(model, data, "ready", ObjType.KEYFRAME, qpos=jp.array([0.9]))
+
+    assert jp.allclose(data.qpos, jp.array([0.9]))
+    assert jp.allclose(data.qvel, model.key_qvel[0])
