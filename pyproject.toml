@@ -22,7 +22,7 @@ dependencies = [
     "gym>=0.26",
     "gym-pusht",
     "gymnasium>=0.28",
-    "jax",
+    "jax[cuda13]",
     "jaxlib",
     "jaxlie>=1.5.0",
     "matplotlib>=3.10.8",
@@ -118,7 +118,15 @@ rl = ["skrl>=2.0.0", "torch"]
 stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["mjxsim", "agents", "datasets", "envs", "examples", "trainers", "utils"]
+packages = [
+    "mjxsim",
+    "agents",
+    "datasets",
+    "envs",
+    "examples",
+    "trainers",
+    "utils",
+]
 artifacts = ["mjxsim/py.typed"]
 
 [tool.hatch.metadata]
