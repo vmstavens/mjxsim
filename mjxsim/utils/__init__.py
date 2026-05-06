@@ -47,9 +47,9 @@ def __getattr__(name: str) -> Any:
     if name in {"mjx", "modelling"}:
         return import_module(f"mjxsim.utils.{name}")
     if name == "DataHandler":
-        return import_module("utils.datahandler").DataHandler
+        return import_module("mjxsim.utils.datahandler").DataHandler
     if name == "split_dataset":
-        return import_module("utils.datasets").split_dataset
+        return import_module("mjxsim.utils.datasets").split_dataset
     if name in _MJX_EXPORTS:
         return getattr(import_module("mjxsim.utils.mjx"), name)
     if name in _MODELLING_EXPORTS:
@@ -60,14 +60,14 @@ def __getattr__(name: str) -> Any:
 def mk_env(*args: Any, **kwargs: Any) -> Any:
     """Create an environment using the legacy lazy-loaded helper."""
 
-    envs = import_module("utils.envs")
+    envs = import_module("mjxsim.utils.envs")
     return envs.mk_env(*args, **kwargs)
 
 
 if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
-    from utils.datahandler import DataHandler
-    from utils.datasets import split_dataset
-    from utils.mjx import (
+    from mjxsim.utils.datahandler import DataHandler
+    from mjxsim.utils.datasets import split_dataset
+    from mjxsim.utils.mjx import (
         ObjType,
         does_exist,
         get_ids,
@@ -77,4 +77,4 @@ if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
         set_pose,
         set_state,
     )
-    from utils.modelling import cable, pipe
+    from mjxsim.utils.modelling import cable, pipe

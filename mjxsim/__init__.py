@@ -47,10 +47,10 @@ if TYPE_CHECKING:
     )
     from trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
     from trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
-    from utils.datahandler import DataHandler  # noqa: F401
-    from utils.datasets import split_dataset  # noqa: F401
-    from utils.load import register  # noqa: F401
-    from utils.mjx import (  # noqa: F401
+    from mjxsim.utils.datahandler import DataHandler  # noqa: F401
+    from mjxsim.utils.datasets import split_dataset  # noqa: F401
+    from mjxsim.utils.load import register  # noqa: F401
+    from mjxsim.utils.mjx import (  # noqa: F401
         ObjType,
         does_exist,
         get_ids,
@@ -60,7 +60,7 @@ if TYPE_CHECKING:
         set_pose,
         set_state,
     )
-    from utils.modelling import cable, pipe  # noqa: F401
+    from mjxsim.utils.modelling import cable, pipe  # noqa: F401
 
 _SUBMODULE_EXPORTS = [
     "agents",
@@ -157,19 +157,19 @@ _EXPORT_MODULES = {
     "PushTEnv": "envs.pushert",
     "SequentialTrainerPlus": "trainers.sequential_trainer_plus",
     "SupervisedTrainer": "trainers.supervised_trainer",
-    "DataHandler": "utils.datahandler",
-    "ObjType": "utils.mjx",
-    "cable": "utils.modelling",
-    "does_exist": "utils.mjx",
-    "get_ids": "utils.mjx",
-    "get_names": "utils.mjx",
-    "get_number_of": "utils.mjx",
-    "get_pose": "utils.mjx",
-    "pipe": "utils.modelling",
-    "register": "utils.load",
-    "set_pose": "utils.mjx",
-    "set_state": "utils.mjx",
-    "split_dataset": "utils.datasets",
+    "DataHandler": "mjxsim.utils.datahandler",
+    "ObjType": "mjxsim.utils.mjx",
+    "cable": "mjxsim.utils.modelling",
+    "does_exist": "mjxsim.utils.mjx",
+    "get_ids": "mjxsim.utils.mjx",
+    "get_names": "mjxsim.utils.mjx",
+    "get_number_of": "mjxsim.utils.mjx",
+    "get_pose": "mjxsim.utils.mjx",
+    "pipe": "mjxsim.utils.modelling",
+    "register": "mjxsim.utils.load",
+    "set_pose": "mjxsim.utils.mjx",
+    "set_state": "mjxsim.utils.mjx",
+    "split_dataset": "mjxsim.utils.datasets",
 }
 
 _OPTIONAL_DEPENDENCIES = {

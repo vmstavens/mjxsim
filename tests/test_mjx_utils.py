@@ -3,7 +3,7 @@ import jaxlie as jaxl
 import mujoco as mj
 import mujoco.mjx as mjx
 
-from utils.mjx import ObjType, set_pose, set_state
+from mjxsim.utils.mjx import ObjType, set_pose, set_state
 
 
 class _RawQuatPose:

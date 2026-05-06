@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 from importlib import resources
+from pathlib import Path
 
 
 def test_import_mjxsim_root() -> None:
@@ -48,6 +50,44 @@ def test_root_exports_modelling_and_mjx_helpers_lazily() -> None:
     assert mjxsim.get_names.__name__ == "get_names"
     assert mjxsim.get_ids.__name__ == "get_ids"
     assert mjxsim.does_exist.__name__ == "does_exist"
+    assert mjxsim.set_state.__name__ == "set_state"
+    assert mjxsim.pipe.__name__ == "pipe"
+    assert mjxsim.cable.__name__ == "cable"
+
+
+def test_mjxsim_utils_exports_are_not_shadowed_by_top_level_utils(
+    tmp_path: Path, monkeypatch
+) -> None:
+    shadow_utils = tmp_path / "utils"
+    shadow_utils.mkdir()
+    shadow_utils.joinpath("__init__.py").write_text("", encoding="utf-8")
+    shadow_utils.joinpath("mjx.py").write_text(
+        "raise RuntimeError('shadowed utils.mjx imported')\n",
+        encoding="utf-8",
+    )
+    shadow_utils.joinpath("modelling.py").write_text(
+        "raise RuntimeError('shadowed utils.modelling imported')\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for module_name in [
+        "mjxsim.utils.mjx",
+        "mjxsim.utils.modelling",
+        "utils",
+        "utils.mjx",
+        "utils.modelling",
+    ]:
+        sys.modules.pop(module_name, None)
+
+    import mjxsim
+
+    for name in ["ObjType", "get_pose", "set_pose", "set_state", "pipe", "cable"]:
+        mjxsim.__dict__.pop(name, None)
+
+    assert mjxsim.ObjType.BODY.value == 1
+    assert mjxsim.get_pose.__name__ == "get_pose"
+    assert mjxsim.set_pose.__name__ == "set_pose"
     assert mjxsim.set_state.__name__ == "set_state"
     assert mjxsim.pipe.__name__ == "pipe"
     assert mjxsim.cable.__name__ == "cable"
