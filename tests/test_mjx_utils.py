@@ -1,8 +1,21 @@
 import jax.numpy as jp
+import jaxlie as jaxl
 import mujoco as mj
 import mujoco.mjx as mjx
 
-from utils.mjx import ObjType, set_state
+from utils.mjx import ObjType, set_pose, set_state
+
+
+class _RawQuatPose:
+    def __init__(self, translation, rotation):
+        self._translation = translation
+        self._rotation = rotation
+
+    def translation(self):
+        return self._translation
+
+    def rotation(self):
+        return self._rotation
 
 
 def test_set_state_applies_keyframe_components_by_name():
@@ -135,3 +148,48 @@ def test_set_state_allows_direct_components_to_override_keyframe():
 
     assert jp.allclose(data.qpos, jp.array([0.9]))
     assert jp.allclose(data.qvel, model.key_qvel[0])
+
+
+def test_set_pose_handles_jaxlie_so3_rotation_for_mocap_body():
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="mocap" mocap="true" pos="0 0 0"/>
+      </worldbody>
+    </mujoco>
+    """
+    model = mjx.put_model(mj.MjModel.from_xml_string(xml))
+    data = mjx.make_data(model)
+    quat_xyzw = jp.array([0.0, 0.0, 0.70710678, 0.70710678])
+    rotation = jaxl.SO3.from_quaternion_xyzw(quat_xyzw)
+    translation = jp.array([1.0, 2.0, 3.0])
+    pose = jaxl.SE3.from_rotation_and_translation(rotation, translation)
+
+    data = set_pose(model, data, "mocap", ObjType.BODY, pose)
+
+    assert jp.allclose(data.mocap_pos[0], translation)
+    assert jp.allclose(data.mocap_quat[0], jp.array([0.70710678, 0.0, 0.0, 0.70710678]))
+
+
+def test_set_pose_handles_raw_quaternion_rotation_order_for_freejoint():
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="free_body" pos="0 0 0">
+          <freejoint/>
+          <geom type="sphere" size="0.01" mass="1"/>
+        </body>
+      </worldbody>
+    </mujoco>
+    """
+    model = mjx.put_model(mj.MjModel.from_xml_string(xml))
+    data = mjx.make_data(model)
+    translation = jp.array([1.0, 2.0, 3.0])
+    quat_wxyz = jp.array([0.1, 0.2, 0.3, 0.4])
+    pose = _RawQuatPose(translation, quat_wxyz)
+
+    data = set_pose(model, data, "free_body", ObjType.BODY, pose, quat_order="wxyz")
+
+    expected_quat = quat_wxyz / jp.linalg.norm(quat_wxyz)
+    assert jp.allclose(data.qpos[:3], translation)
+    assert jp.allclose(data.qpos[3:7], expected_quat)

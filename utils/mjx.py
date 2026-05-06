@@ -140,12 +140,28 @@ def does_exist(model: mjx.Model, identifier: Union[int, str], obj_type: mjx.ObjT
     return exists
 
 
+def _rotation_as_wxyz(rotation: Any, quat_order: str = "xyzw") -> Any:
+    if hasattr(rotation, "normalize") and hasattr(rotation, "as_quaternion_xyzw"):
+        quat_xyzw = rotation.normalize().as_quaternion_xyzw()
+        return jp.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
+
+    quat = jp.asarray(rotation)
+    quat = quat / jp.linalg.norm(quat)
+    if quat_order == "xyzw":
+        return jp.array([quat[3], quat[0], quat[1], quat[2]])
+    if quat_order == "wxyz":
+        return quat
+
+    raise ValueError(f"Unsupported quat_order: {quat_order}")
+
+
 def set_pose(
     model: mjx.Model,
     data: mjx.Data,
     identifier: Union[int, str],
     obj_type: ObjType,
     T: jaxl.SE3,
+    quat_order: str = "xyzw",
 ) -> mjx.Data:
     """
     Sets the pose (position and orientation) of an object in a MuJoCo model, if allowed.
@@ -162,24 +178,23 @@ def set_pose(
         The type of the object, e.g., body, joint.
     T : jaxl.SE3
         The desired pose as an SE3 transformation matrix.
+    quat_order : str
+        Quaternion order to use if ``T.rotation()`` returns a raw quaternion
+        array. ``jaxlie.SO3`` rotations are read with
+        ``as_quaternion_xyzw()`` regardless of this value.
     """
     assert does_exist(model, identifier, obj_type)
 
     # Convert name to id if needed
     if isinstance(identifier, str):
-        id = mjx.name2id(model, obj_type.value, identifier)
+        obj_id = mjx.name2id(model, obj_type.value, identifier)
     else:
-        id = identifier
+        obj_id = identifier
 
     def set_position_and_orientation(pos_array, quat_array, index):
         """Helper to set position and orientation at given index."""
         new_pos = T.translation()
-        new_rot = T.rotation()
-        new_quat_xyzw = new_rot  # xyzw format
-        # new_quat_xyzw = new_rot.to_quaternion()  # xyzw format
-        new_quat_wxyz = jp.array(
-            [new_quat_xyzw[3], new_quat_xyzw[0], new_quat_xyzw[1], new_quat_xyzw[2]]
-        )
+        new_quat_wxyz = _rotation_as_wxyz(T.rotation(), quat_order=quat_order)
 
         updated_pos = pos_array.at[index].set(new_pos)
         updated_quat = quat_array.at[index].set(new_quat_wxyz)
@@ -187,9 +202,8 @@ def set_pose(
 
     # Process based on object type
     if obj_type is ObjType.BODY:
-        print("in body")
         # Check if the body is a mocap body
-        mocap_id = model.body_mocapid[id]
+        mocap_id = model.body_mocapid[obj_id]
         if mocap_id != -1:
             new_mocap_pos, new_mocap_quat = set_position_and_orientation(
                 data.mocap_pos, data.mocap_quat, mocap_id
@@ -198,54 +212,34 @@ def set_pose(
             return data
 
         # Check if the body has a freejoint
-        body_jntadr = model.body_jntadr[id]
+        body_jntadr = model.body_jntadr[obj_id]
         if (
             body_jntadr != -1 and model.jnt_type[body_jntadr] == 0
         ):  # 0 = free joint in MJX
-            print("body has free joint")
             # Get the qpos address for this joint
             jnt_qposadr = model.jnt_qposadr[body_jntadr]
 
-            print(f"{jnt_qposadr=}")
-
             # Update qpos for free joint: [x, y, z, qw, qx, qy, qz]
             new_pos = T.translation()
-            new_rot = T.rotation()
-            new_quat_xyzw = new_rot.as_quaternion_xyzw()  # xyzw format
-            print(f"{new_quat_xyzw=}")
-            # new_quat_xyzw = new_rot.to_quaternion()  # xyzw format
-            new_quat_wxyz = jp.array(
-                [new_quat_xyzw[3], new_quat_xyzw[0], new_quat_xyzw[1], new_quat_xyzw[2]]
-            )
-            print(f"{new_quat_wxyz=}")
+            new_quat_wxyz = _rotation_as_wxyz(T.rotation(), quat_order=quat_order)
 
             # Create the full 7D pose for free joint
             new_qpos = jp.concatenate([new_pos, new_quat_wxyz])
-            print(f"{new_qpos=}")
 
             # Update qpos at the correct position
             updated_qpos = data.qpos.at[jnt_qposadr : jnt_qposadr + 7].set(new_qpos)
-            print(f"{updated_qpos=}")
             data = data.replace(qpos=updated_qpos)
-            print(f"{data.qpos=}")
             return data
 
     elif obj_type is ObjType.JOINT:
-        print("in joint")
         # Check if the joint is a free joint
-        if model.jnt_type[id] == 0:  # 0 = free joint in MJX
-            print("in free joint")
+        if model.jnt_type[obj_id] == 0:  # 0 = free joint in MJX
             # Get the qpos address for this joint
-            jnt_qposadr = model.jnt_qposadr[id]
+            jnt_qposadr = model.jnt_qposadr[obj_id]
 
             # Update qpos for free joint: [x, y, z, qw, qx, qy, qz]
             new_pos = T.translation()
-            new_rot = T.rotation()
-            new_quat_xyzw = new_rot.as_quaternion_xyzw()  # xyzw format
-            # new_quat_xyzw = new_rot.to_quaternion()  # xyzw format
-            new_quat_wxyz = jp.array(
-                [new_quat_xyzw[3], new_quat_xyzw[0], new_quat_xyzw[1], new_quat_xyzw[2]]
-            )
+            new_quat_wxyz = _rotation_as_wxyz(T.rotation(), quat_order=quat_order)
 
             # Create the full 7D pose for free joint
             new_qpos = jp.concatenate([new_pos, new_quat_wxyz])
