@@ -3,7 +3,35 @@
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-__all__ = ["DataHandler", "mk_env", "register", "split_dataset"]
+__all__ = [
+    "DataHandler",
+    "ObjType",
+    "cable",
+    "does_exist",
+    "get_ids",
+    "get_names",
+    "get_number_of",
+    "get_pose",
+    "mk_env",
+    "pipe",
+    "register",
+    "set_pose",
+    "set_state",
+    "split_dataset",
+]
+
+_MJX_EXPORTS = {
+    "ObjType",
+    "does_exist",
+    "get_ids",
+    "get_names",
+    "get_number_of",
+    "get_pose",
+    "set_pose",
+    "set_state",
+}
+
+_MODELLING_EXPORTS = {"cable", "pipe"}
 
 
 def __getattr__(name):
@@ -13,6 +41,10 @@ def __getattr__(name):
         return import_module("utils.load").register
     if name == "split_dataset":
         return import_module("utils.datasets").split_dataset
+    if name in _MJX_EXPORTS:
+        return getattr(import_module("utils.mjx"), name)
+    if name in _MODELLING_EXPORTS:
+        return getattr(import_module("utils.modelling"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -31,3 +63,14 @@ if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
     from utils.datahandler import DataHandler
     from utils.datasets import split_dataset
     from utils.load import register
+    from utils.mjx import (
+        ObjType,
+        does_exist,
+        get_ids,
+        get_names,
+        get_number_of,
+        get_pose,
+        set_pose,
+        set_state,
+    )
+    from utils.modelling import cable, pipe

@@ -50,7 +50,17 @@ if TYPE_CHECKING:
     from utils.datahandler import DataHandler  # noqa: F401
     from utils.datasets import split_dataset  # noqa: F401
     from utils.load import register  # noqa: F401
-    from utils.mjx import ObjType, get_pose, set_pose  # noqa: F401
+    from utils.mjx import (  # noqa: F401
+        ObjType,
+        does_exist,
+        get_ids,
+        get_names,
+        get_number_of,
+        get_pose,
+        set_pose,
+        set_state,
+    )
+    from utils.modelling import cable, pipe  # noqa: F401
 
 _SUBMODULE_EXPORTS = [
     "agents",
@@ -98,9 +108,16 @@ _TRAINER_EXPORTS = ["SequentialTrainerPlus", "SupervisedTrainer"]
 _UTIL_EXPORTS = [
     "DataHandler",
     "ObjType",
+    "cable",
+    "does_exist",
+    "get_ids",
+    "get_names",
+    "get_number_of",
     "get_pose",
+    "pipe",
     "register",
     "set_pose",
+    "set_state",
     "split_dataset",
 ]
 
@@ -142,9 +159,16 @@ _EXPORT_MODULES = {
     "SupervisedTrainer": "trainers.supervised_trainer",
     "DataHandler": "utils.datahandler",
     "ObjType": "utils.mjx",
+    "cable": "utils.modelling",
+    "does_exist": "utils.mjx",
+    "get_ids": "utils.mjx",
+    "get_names": "utils.mjx",
+    "get_number_of": "utils.mjx",
     "get_pose": "utils.mjx",
+    "pipe": "utils.modelling",
     "register": "utils.load",
     "set_pose": "utils.mjx",
+    "set_state": "utils.mjx",
     "split_dataset": "utils.datasets",
 }
 
