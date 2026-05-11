@@ -1,6 +1,10 @@
-"""Trainer implementations exposed as ``mjxsim.trainers``."""
+"""Training utilities exposed as ``mjxsim.trainers``."""
 
-from mjxsim._alias import alias_package
+from .sequential_trainer_plus import SequentialTrainerPlus
+from .supervised_trainer import SUPERVISED_TRAINER_DEFAULT_CONFIG, SupervisedTrainer
 
-_module = alias_package(__name__, "trainers")
-globals().update(_module.__dict__)
+__all__ = [
+    "SequentialTrainerPlus",
+    "SupervisedTrainer",
+    "SUPERVISED_TRAINER_DEFAULT_CONFIG",
+]

@@ -11,19 +11,19 @@ except metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 if TYPE_CHECKING:
-    from agents.diffusion_policy_state import (  # noqa: F401
+    from mjxsim.agents.diffusion_policy_state import (  # noqa: F401
         DP_CFG,
         ConditionalUnet1D,
         DiffusionPolicy,
         EMAModel,
     )
-    from agents.diffusion_policy_vision import (  # noqa: F401
+    from mjxsim.agents.diffusion_policy_vision import (  # noqa: F401
         VISION_DP_CFG,
         DiffusionPolicyVision,
     )
-    from agents.ibrl_base_agent import Agent  # noqa: F401
-    from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
-    from agents.variational_autoencoder import (  # noqa: F401
+    from mjxsim.agents.ibrl_base_agent import Agent  # noqa: F401
+    from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from mjxsim.agents.variational_autoencoder import (  # noqa: F401
         VAE_CFG,
         VAE_STATE_CFG,
         VAE_VISION_CFG,
@@ -45,8 +45,8 @@ if TYPE_CHECKING:
         PushTStateDataset,
         download_dataset,
     )
-    from trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
-    from trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
+    from mjxsim.trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
+    from mjxsim.trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
     from mjxsim.utils.datahandler import DataHandler  # noqa: F401
     from mjxsim.utils.datasets import split_dataset  # noqa: F401
     from mjxsim.utils.load import register  # noqa: F401
@@ -128,24 +128,24 @@ _EXPORT_MODULES = {
     "models": "mjxsim.models",
     "trainers": "mjxsim.trainers",
     "utils": "mjxsim.utils",
-    "Agent": "agents.ibrl_base_agent",
-    "ConditionalUnet1D": "agents.diffusion_policy_state",
-    "DP_CFG": "agents.diffusion_policy_state",
-    "DiffusionPolicy": "agents.diffusion_policy_state",
-    "DiffusionPolicyVision": "agents.diffusion_policy_vision",
-    "EMAModel": "agents.diffusion_policy_state",
-    "IBRL": "agents.ibrl_sac",
-    "IBRL_SAC_CFG": "agents.ibrl_sac",
-    "VAE_CFG": "agents.variational_autoencoder",
-    "VAE_STATE_CFG": "agents.variational_autoencoder",
-    "VAE_VISION_CFG": "agents.variational_autoencoder",
-    "VariationalAutoencoder": "agents.variational_autoencoder",
-    "VariationalAutoencoderAgent": "agents.variational_autoencoder",
-    "VariationalAutoencoderState": "agents.variational_autoencoder",
-    "VariationalAutoencoderStateAgent": "agents.variational_autoencoder",
-    "VariationalAutoencoderVision": "agents.variational_autoencoder",
-    "VariationalAutoencoderVisionAgent": "agents.variational_autoencoder",
-    "VISION_DP_CFG": "agents.diffusion_policy_vision",
+    "Agent": "mjxsim.agents.ibrl_base_agent",
+    "ConditionalUnet1D": "mjxsim.agents.diffusion_policy_state",
+    "DP_CFG": "mjxsim.agents.diffusion_policy_state",
+    "DiffusionPolicy": "mjxsim.agents.diffusion_policy_state",
+    "DiffusionPolicyVision": "mjxsim.agents.diffusion_policy_vision",
+    "EMAModel": "mjxsim.agents.diffusion_policy_state",
+    "IBRL": "mjxsim.agents.ibrl_sac",
+    "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
+    "VAE_CFG": "mjxsim.agents.variational_autoencoder",
+    "VAE_STATE_CFG": "mjxsim.agents.variational_autoencoder",
+    "VAE_VISION_CFG": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoder": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoderAgent": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoderState": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoderStateAgent": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoderVision": "mjxsim.agents.variational_autoencoder",
+    "VariationalAutoencoderVisionAgent": "mjxsim.agents.variational_autoencoder",
+    "VISION_DP_CFG": "mjxsim.agents.diffusion_policy_vision",
     "AttractorTrajectoryDataset": "datasets.attractor",
     "DemonstrationDataset": "datasets.demonstration",
     "ImageStateDataset": "datasets.vision",
@@ -155,8 +155,8 @@ _EXPORT_MODULES = {
     "MocapReach": "envs.mocap_control",
     "PipeInsert2": "envs.pipe_insert_2",
     "PushTEnv": "envs.pushert",
-    "SequentialTrainerPlus": "trainers.sequential_trainer_plus",
-    "SupervisedTrainer": "trainers.supervised_trainer",
+    "SequentialTrainerPlus": "mjxsim.trainers.sequential_trainer_plus",
+    "SupervisedTrainer": "mjxsim.trainers.supervised_trainer",
     "DataHandler": "mjxsim.utils.datahandler",
     "ObjType": "mjxsim.utils.mjx",
     "cable": "mjxsim.utils.modelling",

@@ -20,12 +20,14 @@ def test_import_mjxsim_root() -> None:
 def test_namespaced_submodule_imports() -> None:
     from mjxsim.agents import DiffusionPolicy
     from mjxsim.datasets.pushert import PushTStateDataset
+    from mjxsim.trainers import SupervisedTrainer
     from mjxsim.utils.datasets import split_dataset
     from mjxsim.utils.mjx import ObjType, get_names, get_number_of, set_state
     from mjxsim.utils.modelling import cable, pipe
 
     assert DiffusionPolicy.__name__ == "DiffusionPolicy"
     assert PushTStateDataset.__name__ == "PushTStateDataset"
+    assert SupervisedTrainer.__name__ == "SupervisedTrainer"
     assert split_dataset.__name__ == "split_dataset"
     assert ObjType.BODY.value == 1
     assert get_names.__name__ == "get_names"
@@ -58,6 +60,20 @@ def test_root_exports_modelling_and_mjx_helpers_lazily() -> None:
 def test_mjxsim_utils_exports_are_not_shadowed_by_top_level_utils(
     tmp_path: Path, monkeypatch
 ) -> None:
+    shadow_agents = tmp_path / "agents"
+    shadow_agents.mkdir()
+    shadow_agents.joinpath("__init__.py").write_text("", encoding="utf-8")
+    shadow_agents.joinpath("diffusion_policy_state.py").write_text(
+        "raise RuntimeError('shadowed agents.diffusion_policy_state imported')\n",
+        encoding="utf-8",
+    )
+    shadow_trainers = tmp_path / "trainers"
+    shadow_trainers.mkdir()
+    shadow_trainers.joinpath("__init__.py").write_text("", encoding="utf-8")
+    shadow_trainers.joinpath("supervised_trainer.py").write_text(
+        "raise RuntimeError('shadowed trainers.supervised_trainer imported')\n",
+        encoding="utf-8",
+    )
     shadow_utils = tmp_path / "utils"
     shadow_utils.mkdir()
     shadow_utils.joinpath("__init__.py").write_text("", encoding="utf-8")
@@ -72,6 +88,14 @@ def test_mjxsim_utils_exports_are_not_shadowed_by_top_level_utils(
 
     monkeypatch.syspath_prepend(str(tmp_path))
     for module_name in [
+        "agents",
+        "agents.diffusion_policy_state",
+        "mjxsim.agents",
+        "mjxsim.agents.diffusion_policy_state",
+        "mjxsim.trainers",
+        "mjxsim.trainers.supervised_trainer",
+        "trainers",
+        "trainers.supervised_trainer",
         "mjxsim.utils.mjx",
         "mjxsim.utils.modelling",
         "utils",
@@ -82,9 +106,20 @@ def test_mjxsim_utils_exports_are_not_shadowed_by_top_level_utils(
 
     import mjxsim
 
-    for name in ["ObjType", "get_pose", "set_pose", "set_state", "pipe", "cable"]:
+    for name in [
+        "DiffusionPolicy",
+        "ObjType",
+        "SupervisedTrainer",
+        "get_pose",
+        "set_pose",
+        "set_state",
+        "pipe",
+        "cable",
+    ]:
         mjxsim.__dict__.pop(name, None)
 
+    assert mjxsim.DiffusionPolicy.__name__ == "DiffusionPolicy"
+    assert mjxsim.SupervisedTrainer.__name__ == "SupervisedTrainer"
     assert mjxsim.ObjType.BODY.value == 1
     assert mjxsim.get_pose.__name__ == "get_pose"
     assert mjxsim.set_pose.__name__ == "set_pose"
