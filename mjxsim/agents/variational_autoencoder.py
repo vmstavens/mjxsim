@@ -382,6 +382,7 @@ class _VAEAgent(Agent):
         action_space=None,
         memory=None,
         config: VAEBaseCfg | None = None,
+        stats: dict[str, Any] | None = None,
     ) -> None:
         self.device = _resolve_device(device)
         if config is None:
@@ -389,6 +390,7 @@ class _VAEAgent(Agent):
         _config = copy.deepcopy(config)
         _config.expand()
         self.config = _config
+        self.stats = stats
         self._learning_rate = _config.learning_rate
         self._weight_decay = _config.weight_decay
         self._beta = _config.beta
@@ -462,6 +464,54 @@ class _VAEAgent(Agent):
             x = inputs
         return torch.as_tensor(x, device=self.device, dtype=torch.float32)
 
+    def _input_stats(self) -> Mapping[str, Any] | None:
+        if self.stats is None:
+            return None
+        if "obs" in self.stats:
+            return self.stats["obs"]
+        for key in self.input_keys:
+            if key in self.stats:
+                return self.stats[key]
+        if "min" in self.stats and "max" in self.stats:
+            return self.stats
+        return None
+
+    def _normalize_input(
+        self, x: torch.Tensor, normalize_obs: bool | None = None
+    ) -> torch.Tensor:
+        stats = self._input_stats()
+        if stats is None:
+            do_normalize = False
+        else:
+            do_normalize = normalize_obs if normalize_obs is not None else True
+
+        if not do_normalize:
+            return x
+
+        min_val = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
+        max_val = torch.as_tensor(stats["max"], device=x.device, dtype=x.dtype)
+        range_val = max_val - min_val
+        range_val = torch.where(range_val == 0, torch.ones_like(range_val), range_val)
+        return 2.0 * (x - min_val) / range_val - 1.0
+
+    def _unnormalize_input(
+        self, x: torch.Tensor, unnormalize: bool | None = None
+    ) -> torch.Tensor:
+        stats = self._input_stats()
+        if stats is None:
+            do_unnormalize = False
+        else:
+            do_unnormalize = unnormalize if unnormalize is not None else True
+
+        if not do_unnormalize:
+            return x
+
+        min_val = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
+        max_val = torch.as_tensor(stats["max"], device=x.device, dtype=x.dtype)
+        range_val = max_val - min_val
+        range_val = torch.where(range_val == 0, torch.ones_like(range_val), range_val)
+        return 0.5 * (x + 1.0) * range_val + min_val
+
     def _update(
         self,
         inputs: torch.Tensor | Mapping[str, Any],
@@ -499,28 +549,53 @@ class _VAEAgent(Agent):
         timestep: int = 0,
         timesteps: int = 0,
         role: str = "policy",
+        normalize_obs: bool | None = None,
+        unnormalize_recon: bool | None = None,
     ) -> tuple[torch.Tensor, None, dict[str, torch.Tensor]]:
         x = self._coerce_input(states, None)
+        x = self._normalize_input(x, normalize_obs=normalize_obs)
         recon_x, mu, logvar = self.model.act({"x": x})[0]
+        recon_x = self._unnormalize_input(recon_x, unnormalize=unnormalize_recon)
         return recon_x, None, {"mu": mu, "logvar": logvar}
 
     @torch.no_grad()
-    def encode(self, states: torch.Tensor | Mapping[str, Any]) -> torch.Tensor:
+    def encode(
+        self,
+        states: torch.Tensor | Mapping[str, Any],
+        normalize_obs: bool | None = None,
+    ) -> torch.Tensor:
         x = self._coerce_input(states, None)
+        x = self._normalize_input(x, normalize_obs=normalize_obs)
         module = self.model._unwrapped_module
         mu, _ = module.encode(x)
         return mu
 
     @torch.no_grad()
-    def reconstruct(self, states: torch.Tensor | Mapping[str, Any]) -> torch.Tensor:
-        recon, _, _ = self.act(states)
+    def reconstruct(
+        self,
+        states: torch.Tensor | Mapping[str, Any],
+        normalize_obs: bool | None = None,
+        unnormalize_recon: bool | None = None,
+    ) -> torch.Tensor:
+        recon, _, _ = self.act(
+            states,
+            normalize_obs=normalize_obs,
+            unnormalize_recon=unnormalize_recon,
+        )
         return recon
 
     @torch.no_grad()
-    def sample(self, num_samples: int) -> torch.Tensor:
+    def sample(
+        self,
+        num_samples: int,
+        unnormalize_sample: bool | None = None,
+    ) -> torch.Tensor:
         module = self.model._unwrapped_module
         z = torch.randn(num_samples, self.config.latent_dim, device=self.device)
-        return module.decode(z)
+        return self._unnormalize_input(
+            module.decode(z),
+            unnormalize=unnormalize_sample,
+        )
 
     def eval(self) -> None:
         self.model.eval()
@@ -561,6 +636,7 @@ class _VAEAgent(Agent):
             else None,
             "config": self.config,
             "is_trained": self.is_trained,
+            "stats": self.stats,
         }
         torch.save(checkpoint, path)
 
@@ -581,7 +657,12 @@ class _VAEAgent(Agent):
                 f"but load was called on {cls.__name__}"
             )
         models = {"model": agent_cls.model_cls(config)}
-        agent = agent_cls(models=models, device=device, config=config)
+        agent = agent_cls(
+            models=models,
+            device=device,
+            config=config,
+            stats=checkpoint.get("stats"),
+        )
         agent.model.load_state_dict(checkpoint["model_state_dict"])
 
         if checkpoint["optimizer_state_dict"]:
