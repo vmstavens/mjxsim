@@ -150,7 +150,7 @@ class ModuleWrapper(DeterministicMixin, Model):
 
     def act(self, inputs: dict[str, Any], role: str = ""):
         actions, outputs = DeterministicMixin.act(self, inputs, role=role)
-        return actions, None, outputs
+        return actions, outputs
 
 
 class SinusoidalPosEmb(nn.Module):
@@ -566,9 +566,7 @@ class DiffusionPolicy(Agent):
             "global_cond": obs_cond,
         }
 
-        noise_pred, _, _ = self.model.act(inputs=inputs)
-
-        out, _, _ = self.model.act(inputs)
+        noise_pred, _ = self.model.act(inputs=inputs)
 
         # Loss
         loss = nn.functional.mse_loss(noise_pred, noise)
@@ -584,22 +582,27 @@ class DiffusionPolicy(Agent):
 
     def act(
         self,
-        states: Union[torch.Tensor, dict],
+        observations: Union[torch.Tensor, dict] | None = None,
+        states: Union[torch.Tensor, dict] | None = None,
+        *,
         timestep: int = 0,
         timesteps: int = 0,
         role: str = "policy",
         num_inference_steps=None,
         normalize_obs: Optional[bool] = None,
         unnormalize_act: Optional[bool] = None,
-    ) -> tuple[torch.Tensor, None, dict]:
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Generate actions using DDIM sampling
 
         expected dimensions [num_envs, obs_horizon, o_dim]
 
         """
 
+        states = observations if states is None else states
         if isinstance(states, dict):
-            states = states["states"]
+            states = states.get("observations", states.get("states"))
+        if states is None:
+            raise ValueError("observations or states must be provided")
 
         if not torch.is_tensor(states):
             states = torch.as_tensor(states, device=self.device, dtype=torch.float32)
@@ -644,7 +647,7 @@ class DiffusionPolicy(Agent):
                 "global_cond": obs_cond,
             }
 
-            noise_pred, _, _ = self.ema_model.act(inputs=inputs)
+            noise_pred, _ = self.ema_model.act(inputs=inputs)
             noisy_actions = self.noise_scheduler.step(
                 noise_pred, t, noisy_actions
             ).prev_sample
@@ -668,7 +671,7 @@ class DiffusionPolicy(Agent):
             )
             noisy_actions = 0.5 * (noisy_actions + 1.0) * range_val + min_val
 
-        return noisy_actions, None, {}
+        return noisy_actions, {}
 
     def eval(self) -> None:
         self.model.eval()

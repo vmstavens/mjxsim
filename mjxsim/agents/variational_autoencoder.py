@@ -160,7 +160,7 @@ class ModuleWrapper(DeterministicMixin, Model):
 
     def act(self, inputs: dict[str, Any], role: str = ""):
         outputs, extras = self.compute(inputs, role=role)
-        return outputs, None, extras
+        return outputs, extras
 
 
 class ImageEncoder(nn.Module):
@@ -545,18 +545,23 @@ class _VAEAgent(Agent):
     @torch.no_grad()
     def act(
         self,
-        states: torch.Tensor | Mapping[str, Any],
+        observations: torch.Tensor | Mapping[str, Any] | None = None,
+        states: torch.Tensor | Mapping[str, Any] | None = None,
+        *,
         timestep: int = 0,
         timesteps: int = 0,
         role: str = "policy",
         normalize_obs: bool | None = None,
         unnormalize_recon: bool | None = None,
-    ) -> tuple[torch.Tensor, None, dict[str, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        states = observations if states is None else states
+        if states is None:
+            raise ValueError("observations or states must be provided")
         x = self._coerce_input(states, None)
         x = self._normalize_input(x, normalize_obs=normalize_obs)
         recon_x, mu, logvar = self.model.act({"x": x})[0]
         recon_x = self._unnormalize_input(recon_x, unnormalize=unnormalize_recon)
-        return recon_x, None, {"mu": mu, "logvar": logvar}
+        return recon_x, {"mu": mu, "logvar": logvar}
 
     @torch.no_grad()
     def encode(
@@ -577,7 +582,7 @@ class _VAEAgent(Agent):
         normalize_obs: bool | None = None,
         unnormalize_recon: bool | None = None,
     ) -> torch.Tensor:
-        recon, _, _ = self.act(
+        recon, _ = self.act(
             states,
             normalize_obs=normalize_obs,
             unnormalize_recon=unnormalize_recon,

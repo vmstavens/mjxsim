@@ -171,7 +171,7 @@ class ModuleWrapper(DeterministicMixin, Model):
 
     def act(self, inputs: dict[str, Any], role: str = ""):
         actions, outputs = DeterministicMixin.act(self, inputs, role=role)
-        return actions, None, outputs
+        return actions, outputs
 
 
 class BasicBlock(nn.Module):
@@ -732,7 +732,7 @@ class DiffusionPolicyVision(Agent):
         ).long()
         noisy_actions = self.noise_scheduler.add_noise(actions, noise, timesteps)
 
-        noise_pred, _, _ = self.model.act(
+        noise_pred, _ = self.model.act(
             inputs={
                 "sample": noisy_actions,
                 "timestep": timesteps,
@@ -757,13 +757,18 @@ class DiffusionPolicyVision(Agent):
     @torch.no_grad()
     def act(
         self,
-        states: Mapping[str, Any],
+        observations: Mapping[str, Any] | None = None,
+        states: Mapping[str, Any] | None = None,
+        *,
         timestep: int = 0,
         timesteps: int = 0,
         role: str = "policy",
         num_inference_steps=None,
         unnormalize_act: Optional[bool] = None,
-    ) -> tuple[torch.Tensor, None, dict]:
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
+        states = observations if states is None else states
+        if states is None:
+            raise ValueError("observations or states must be provided")
         images = _batch_value(states, "pixels", "image", "images")
         lowdim_obs = _batch_value(states, "agent_pos", "lowdim_obs", "states")
         images = torch.as_tensor(images, device=self.device)
@@ -778,7 +783,7 @@ class DiffusionPolicyVision(Agent):
         self.noise_scheduler.set_timesteps(num_inference_steps, device=self.device)
 
         for t in self.noise_scheduler.timesteps:
-            noise_pred, _, _ = self.ema_model.act(
+            noise_pred, _ = self.ema_model.act(
                 inputs={
                     "sample": noisy_actions,
                     "timestep": t,
@@ -808,13 +813,13 @@ class DiffusionPolicyVision(Agent):
             )
             noisy_actions = 0.5 * (noisy_actions + 1.0) * range_val + min_val
 
-        return noisy_actions, None, {}
+        return noisy_actions, {}
 
     @torch.no_grad()
     def predict(
         self, batch: Mapping[str, Any], num_inference_steps: int | None = None
     ) -> torch.Tensor:
-        actions, _, _ = self.act(batch, num_inference_steps=num_inference_steps)
+        actions, _ = self.act(batch, num_inference_steps=num_inference_steps)
         return actions
 
     def eval(self) -> None:

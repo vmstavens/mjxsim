@@ -179,7 +179,7 @@ def rollout_policy(
                 ).unsqueeze(0),
             }
             with torch.no_grad():
-                actions_pred, _, _ = policy.act(states=batch)
+                actions_pred, _ = policy.act(observations=batch)
 
             start = obs_horizon - 1
             end = start + action_horizon

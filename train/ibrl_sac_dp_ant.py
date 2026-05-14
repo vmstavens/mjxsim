@@ -7,15 +7,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
-# from skrl.agents.torch.sac.sac import SAC_DEFAULT_CONFIG
-from agents.ibrl_sac_o_o2 import IBRL, IBRL_SAC_DEFAULT_CONFIG
+from agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
 from agents.models import ibrl_sac as ibrl
 from skrl.memories.torch import RandomMemory
 from skrl.utils import set_seed
-from trainers.sequential_trainer_x import (
-    SEQUENTIAL_TRAINER_X_DEFAULT_CONFIG,
-    SequentialTrainerX,
-)
+from trainers.sequential_trainer_plus import SequentialTrainerPlus
 from utils.envs import mk_env
 
 import agents.diffusion_policy_state as dp
@@ -34,19 +30,18 @@ set_seed(10)  # e.g. `set_seed(42)` for fixed seed
 _TRAIN = Path(__file__).parent
 
 logger.info("Loading configs...")
-dp_config = dp.DIFFUSION_POLICY_STATE_DEFAULT_CONFIG
-dp_config = dp.DIFFUSION_POLICY_STATE_DEFAULT_CONFIG
-dp_config["num_envs"] = 10
-num_envs = dp_config["num_envs"]
-dp_config["obs_horizon"] = 2
+dp_config = copy.deepcopy(dp.DIFFUSION_POLICY_STATE_DEFAULT_CONFIG)
+dp_config.num_envs = 10
+num_envs = dp_config.num_envs
+dp_config.obs_horizon = 2
 logger.info("Setting up env...")
 env = mk_env("ant")  # noqa: F821
 
 a_dim = env.action_space.shape[0]
 o_dim = env.observation_space.shape[0]
 
-dp_config["obs_dim"] = o_dim
-dp_config["global_cond_dim"] = dp_config["obs_horizon"] * dp_config["obs_dim"]
+dp_config.obs_dim = o_dim
+dp_config.global_cond_dim = dp_config.obs_horizon * dp_config.obs_dim
 
 logger.info("Loading memories...")
 
@@ -54,9 +49,9 @@ train_path = Path(".data/gen_traj_ant_ppo/train")
 valid_path = Path(".data/gen_traj_ant_ppo/valid")
 train_data_files = glob.glob(train_path.as_posix() + "/*.json")
 valid_data_files = glob.glob(valid_path.as_posix() + "/*.json")
-pred_horizon = dp_config["pred_horizon"]
-obs_horizon = dp_config["obs_horizon"]
-action_horizon = dp_config["action_horizon"]
+pred_horizon = dp_config.pred_horizon
+obs_horizon = dp_config.obs_horizon
+action_horizon = dp_config.action_horizon
 dataset = DemonstrationDataset(
     json_paths=train_data_files,
     sequence_length=pred_horizon,
@@ -115,7 +110,7 @@ input_dim = a_dim
 dp_models = {}
 dp_models["model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
 # dp_models["model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
-ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config["ema_power"])
+ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config.ema_power)
 # ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config["ema_power"])
 dp_models["ema_model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
 
@@ -134,34 +129,32 @@ logger.info("Configuring IBRL... ")
 # configure and instantiate the agent (visit its documentation to see all the options)
 # https://skrl.readthedocs.io/en/latest/api/agents/sac.html#configuration-and-hyperparameters
 # configure and instantiate the agent
-cfg = IBRL_SAC_DEFAULT_CONFIG.copy()
-cfg["discount_factor"] = 0.99
-cfg["batch_size"] = 32
+cfg = copy.deepcopy(IBRL_SAC_DEFAULT_CONFIG)
+cfg.discount_factor = 0.99
+cfg.batch_size = 32
 # cfg["batch_size"] = 128
 # cfg["batch_size"] = 10
 # cfg["batch_size"] = 128
-cfg["num_envs"] = dp_config[
-    "num_envs"
-]  # TODO: What in the world is happening with this convoluted configs...
-cfg["random_timesteps"] = 0  # Add some random exploration at the start
-cfg["learning_starts"] = 0  # Start learning after some experience
-cfg["learn_entropy"] = True
-cfg["grad_norm_clip"] = 1.0  # Add gradient clipping for stability
-cfg["learning_rate"] = 3e-4  # Standard SAC learning rate
-cfg["initial_entropy_value"] = 0.1  # Entropy learning rate
-cfg["RED-Q_enable"] = False  # enable RED-Q
-cfg["offline"] = False  # not important here
+cfg.num_envs = dp_config.num_envs
+cfg.random_timesteps = 0  # Add some random exploration at the start
+cfg.learning_starts = 0  # Start learning after some experience
+cfg.learn_entropy = True
+cfg.grad_norm_clip = 1.0  # Add gradient clipping for stability
+cfg.actor_learning_rate = 3e-4
+cfg.critic_learning_rate = 3e-4
+cfg.initial_entropy_value = 0.1
+cfg.offline = False  # not important here
 # cfg["num_envs"] = env.num_envs
 
 # logging to TensorBoard and write checkpoints (in timesteps)
-cfg["experiment"]["wandb"] = True
-cfg["experiment"]["write_interval"] = 50
-cfg["experiment"]["checkpoint_interval"] = 100
-cfg["experiment"]["experiment_name"] = Path(__file__).stem
+cfg.experiment.wandb = True
+cfg.experiment.write_interval = 50
+cfg.experiment.checkpoint_interval = 100
+cfg.experiment.experiment_name = Path(__file__).stem
 model_path = Path(__file__).parent.parent / ".runs"
 model_path.mkdir(parents=True, exist_ok=True)
-cfg["experiment"]["directory"] = model_path.as_posix()
-cfg["experiment"]["experiment_name"] = Path(__file__).stem
+cfg.experiment.directory = model_path.as_posix()
+cfg.experiment.experiment_name = Path(__file__).stem
 
 
 # instantiate the agent's models (function approximators).
@@ -181,7 +174,8 @@ for model in models.values():
     model.init_parameters(method_name="normal_", mean=0.0, std=0.1)
 
 
-if cfg["RED-Q_enable"]:
+red_q_enable = False
+if red_q_enable:
     # Create Emseabling Q networks
     ensemble_size = 5
     # Create ensemble of critics (each with unique parameters)
@@ -205,7 +199,7 @@ if cfg["RED-Q_enable"]:
 
 logger.info("Building IBRL... ")
 logger.info(f"{num_envs=}")
-logger.info(f"{dp_config["num_envs"]=}")
+logger.info(f"{dp_config.num_envs=}")
 
 
 agent = IBRL(
@@ -220,13 +214,10 @@ agent = IBRL(
 )
 
 
-cfg_trainer = copy.deepcopy(SEQUENTIAL_TRAINER_X_DEFAULT_CONFIG)
-
-cfg_trainer["timesteps"] = 50_000
-cfg_trainer["headless"] = True
+cfg_trainer = {"timesteps": 50_000, "headless": True}
 
 # cfg_trainer = {"timesteps": 350000, "headless": True}
-trainer = SequentialTrainerX(cfg=cfg_trainer, env=env, agents=agent)
+trainer = SequentialTrainerPlus(cfg=cfg_trainer, env=env, agents=agent)
 # trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent])
 
 logger.info("Start Training... ")

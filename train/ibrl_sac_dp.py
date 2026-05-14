@@ -1,4 +1,5 @@
 import glob
+import copy
 import logging
 import os
 from pathlib import Path
@@ -6,15 +7,14 @@ from pathlib import Path
 import pandas as pd
 import torch
 from brax import envs
-from skrl.agents.torch.sac.sac import SAC_DEFAULT_CONFIG
-from skrl.envs.torch import wrap_env
+from skrl.envs.wrappers.torch import wrap_env
 from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 
 import agents.diffusion_policy_state as dp
 from agents.diffusion_policy_state import DiffusionPolicy
-from agents.ibrl_sac import IBRL
+from agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
 from agents.models import ibrl_sac as ibrl
 from envs.brax.ur10e import UR10e
 from utils.datasets import DataHandler, folder_to_memory
@@ -143,8 +143,8 @@ memory = RandomMemory(memory_size=10000, device=device, replacement=True)
 # ------------------IL DP--------------------------
 logger.info("Building DP...")
 
-dp_config = dp.DIFFUSION_POLICY_STATE_DEFAULT_CONFIG
-dp_config["num_envs"] = 1
+dp_config = copy.deepcopy(dp.DIFFUSION_POLICY_STATE_DEFAULT_CONFIG)
+dp_config.num_envs = 1
 
 dp_models = {}
 
@@ -157,7 +157,7 @@ input_dim = act_dim
 dp_models = {}
 dp_models["model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
 # dp_models["model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
-ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config["ema_power"])
+ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config.ema_power)
 # ema = dp.EMAModel(dp_models["model"].parameters(), power=dp_config["ema_power"])
 dp_models["ema_model"] = dp.ConditionalUnet1D(input_dim, dp_config).to(device)
 
@@ -210,33 +210,33 @@ logger.info("Configuring IBRL... ")
 # configure and instantiate the agent (visit its documentation to see all the options)
 # https://skrl.readthedocs.io/en/latest/api/agents/sac.html#configuration-and-hyperparameters
 # configure and instantiate the agent
-cfg = SAC_DEFAULT_CONFIG.copy()
-cfg["discount_factor"] = 0.99
-cfg["batch_size"] = 10
+cfg = copy.deepcopy(IBRL_SAC_DEFAULT_CONFIG)
+cfg.discount_factor = 0.99
+cfg.batch_size = 10
 # cfg["batch_size"] = 128
 # cfg["batch_size"] = 10
 # cfg["batch_size"] = 128
-cfg["random_timesteps"] = 0  # Add some random exploration at the start
-cfg["learning_starts"] = 0  # Start learning after some experience
-cfg["learn_entropy"] = True
-cfg["grad_norm_clip"] = 1.0  # Add gradient clipping for stability
-cfg["learning_rate"] = 3e-4  # Standard SAC learning rate
-cfg["initial_entropy_value"] = 0.1  # Entropy learning rate
-cfg["RED-Q_enable"] = False  # enable RED-Q
-cfg["offline"] = False  # not important here
-cfg["num_envs"] = env.num_envs
+cfg.random_timesteps = 0  # Add some random exploration at the start
+cfg.learning_starts = 0  # Start learning after some experience
+cfg.learn_entropy = True
+cfg.grad_norm_clip = 1.0  # Add gradient clipping for stability
+cfg.actor_learning_rate = 3e-4  # Standard SAC learning rate
+cfg.critic_learning_rate = 3e-4
+cfg.initial_entropy_value = 0.1
+cfg.offline = False  # not important here
+cfg.num_envs = env.num_envs
 
 # logging to TensorBoard and write checkpoints (in timesteps)
-cfg["experiment"]["write_interval"] = 50
-cfg["experiment"]["checkpoint_interval"] = 1000
-cfg["experiment"]["experiment_name"] = Path(__file__).stem
-cfg["experiment"]["wandb"] = True
+cfg.experiment.write_interval = 50
+cfg.experiment.checkpoint_interval = 1000
+cfg.experiment.experiment_name = Path(__file__).stem
+cfg.experiment.wandb = True
 model_path = Path(__file__).parent / "results/models"
 model_path.mkdir(parents=True, exist_ok=True)
 
-cfg["experiment"]["directory"] = model_path.as_posix()
-cfg["experiment"]["experiment_name"] = Path(__file__).stem
-cfg["experiment"]["wandb"] = True
+cfg.experiment.directory = model_path.as_posix()
+cfg.experiment.experiment_name = Path(__file__).stem
+cfg.experiment.wandb = True
 
 logger.info("Building IBRL... ")
 

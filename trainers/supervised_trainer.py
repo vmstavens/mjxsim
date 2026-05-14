@@ -218,7 +218,7 @@ def rollout_pusht(
     for step in range(max_steps):
         obs_seq = torch.stack(list(obs_deque)).unsqueeze(0)
         with torch.no_grad():
-            actions_pred, _, _ = policy.act(states=obs_seq)
+            actions_pred, _ = policy.act(observations=obs_seq)
         act = actions_pred[0, obs_horizon - 1, :].detach().cpu().numpy()
 
         obs, reward, done, truncated, info = env.step(act)
@@ -246,25 +246,25 @@ def train_diffusion_policy_pushert(
 
     # Dataset
     dataset_path = download_dataset()
-    dp_config = DIFFUSION_POLICY_STATE_DEFAULT_CONFIG.copy()
-    pred_horizon = dp_config["pred_horizon"]
-    act_horizon = dp_config["action_horizon"]
-    obs_horizon = dp_config["obs_horizon"]
+    dp_config = copy.deepcopy(DIFFUSION_POLICY_STATE_DEFAULT_CONFIG)
+    pred_horizon = dp_config.pred_horizon
+    act_horizon = dp_config.action_horizon
+    obs_horizon = dp_config.obs_horizon
 
     dataset = PushTStateDataset(
         dataset_path=dataset_path,
         pred_horizon=pred_horizon,
         obs_horizon=obs_horizon,
-        action_horizon=dp_config.get("action_horizon", act_horizon),
+        action_horizon=act_horizon,
     )
 
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=dp_config.get("num_workers", 0),
+        num_workers=dp_config.num_workers,
         pin_memory=True,
-        persistent_workers=dp_config.get("num_workers", 0) > 0,
+        persistent_workers=dp_config.num_workers > 0,
     )
 
     dp_models = {
@@ -275,7 +275,7 @@ def train_diffusion_policy_pushert(
             device
         ),
     }
-    ema = EMAModel(dp_models["model"].parameters(), power=dp_config["ema_power"])
+    ema = EMAModel(dp_models["model"].parameters(), power=dp_config.ema_power)
 
     agent = DiffusionPolicy(
         a_dim=a_dim,
@@ -343,7 +343,7 @@ def train_diffusion_policy_pushert(
         for _ in range(200):
             obs_seq = torch.stack(list(obs_deque)).unsqueeze(0)
             with torch.no_grad():
-                actions_pred, _, _ = agent.act(states=obs_seq)
+                actions_pred, _ = agent.act(observations=obs_seq)
             act = (
                 actions_pred[0, agent.config["obs_horizon"] - 1, :]
                 .detach()
