@@ -54,11 +54,11 @@ class Agent(SkrlAgent):
     def init(self, *, trainer_cfg: dict[str, Any] | None = None) -> None:
         super().init(trainer_cfg=trainer_cfg)
 
-    # def write_tracking_data(self, *, timestep: int, timesteps: int) -> None:
-    #     super().write_tracking_data(timestep=timestep, timesteps=timesteps)
-    #     writer = getattr(self, "writer", None)
-    #     if writer is not None:
-    #         writer.flush()
+    def write_tracking_data(self, *, timestep: int, timesteps: int) -> None:
+        super().write_tracking_data(timestep=timestep, timesteps=timesteps)
+        writer = getattr(self, "writer", None)
+        if writer is not None:
+            writer.flush()
 
     def enable_models_training_mode(self, enabled: bool = True) -> None:
         super().enable_models_training_mode(enabled)
