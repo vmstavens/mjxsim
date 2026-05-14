@@ -5,6 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeAlias
 
+import numpy as np
+import torch
+from gymnasium import spaces
+from gymnasium.vector import utils as gym_utils
+from skrl.envs.wrappers.torch import Wrapper
+from skrl.memories.torch import RandomMemory
+
 if TYPE_CHECKING:  # pragma: no cover - imported for type checkers only
     from ml_collections import config_dict
     from mujoco_playground import MjxEnv
@@ -12,6 +19,8 @@ if TYPE_CHECKING:  # pragma: no cover - imported for type checkers only
 ConfigFactory: TypeAlias = Callable[[], "config_dict.ConfigDict"]
 ConfigInput: TypeAlias = Any | ConfigFactory | None
 DomainRandomizer: TypeAlias = Callable[[Any, Any], tuple[Any, Any]]
+
+__all__ = ["get_memory", "override_action_space", "register"]
 
 
 def _playground_registry():
@@ -114,3 +123,104 @@ def register(
 
     _add_to_top_level_registry(name)
     return name
+
+
+def override_action_space(
+    env, action_dim: int, low: np.ndarray, high: np.ndarray, num_envs: int
+):
+    """
+    Override the action space of a wrapped vectorized environment.
+
+    Parameters
+    ----------
+    env
+        Environment whose action space should be overridden. This function assumes
+        the environment may be wrapped, for example as
+        ``MjxWrapper(TorchWrapper(VectorGymWrapper))``, and therefore attempts to
+        set the action space on multiple nested wrapper levels.
+    action_dim : int
+        Number of action dimensions for a single environment.
+    low : np.ndarray
+        Lower action bounds. Can be either a scalar-like value, which is broadcast
+        to all action dimensions, or an array with shape ``(action_dim,)``.
+    high : np.ndarray
+        Upper action bounds. Can be either a scalar-like value, which is broadcast
+        to all action dimensions, or an array with shape ``(action_dim,)``.
+    num_envs : int
+        Number of vectorized environments. The single-environment action space is
+        batched using ``gym_utils.batch_space``.
+
+    Returns
+    -------
+    env
+        The same environment instance, with its nested action space overwritten.
+
+    Raises
+    ------
+    ValueError
+        If ``low`` or ``high`` cannot be broadcast to shape ``(action_dim,)``.
+    """
+    low_arr = np.asarray(low, dtype=np.float32)
+    high_arr = np.asarray(high, dtype=np.float32)
+
+    if low_arr.shape != (action_dim,):
+        if low_arr.size == 1:
+            low_arr = np.full((action_dim,), float(low_arr), dtype=np.float32)
+        else:
+            raise ValueError(f"low shape {low_arr.shape} != ({action_dim},)")
+
+    if high_arr.shape != (action_dim,):
+        if high_arr.size == 1:
+            high_arr = np.full((action_dim,), float(high_arr), dtype=np.float32)
+        else:
+            raise ValueError(f"high shape {high_arr.shape} != ({action_dim},)")
+
+    base_space = spaces.Box(
+        low=low_arr,
+        high=high_arr,
+        shape=(action_dim,),
+        dtype="float32",
+    )
+
+    batched_space = gym_utils.batch_space(base_space, num_envs)
+
+    # MjxWrapper wraps TorchWrapper(VectorGymWrapper). Set on both to be safe.
+    try:
+        env._env.action_space = batched_space
+    except Exception:
+        pass
+
+    try:
+        env._env.env.action_space = batched_space
+    except Exception:
+        pass
+
+    return env
+
+
+def get_memory(
+    env: Wrapper,
+    tensor_names: list[str] = [
+        "states",
+        "actions",
+        "rewards",
+        "next_states",
+        "terminated",
+    ],
+    capacity: int = 350_000,
+) -> RandomMemory:
+    memory = RandomMemory(
+        memory_size=capacity, num_envs=env.num_envs, device=env.device, replacement=True
+    )
+    memory.create_tensor(
+        name=tensor_names[0], size=env.observation_space, dtype=torch.float32
+    )
+    memory.create_tensor(
+        name=tensor_names[1], size=env.action_space, dtype=torch.float32
+    )
+    memory.create_tensor(name=tensor_names[2], size=1, dtype=torch.float32)
+    memory.create_tensor(
+        name=tensor_names[3], size=env.observation_space, dtype=torch.float32
+    )
+    memory.create_tensor(name=tensor_names[4], size=1, dtype=torch.bool)
+    return memory

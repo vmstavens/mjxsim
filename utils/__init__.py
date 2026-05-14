@@ -9,10 +9,12 @@ __all__ = [
     "cable",
     "does_exist",
     "get_ids",
+    "get_memory",
     "get_names",
     "get_number_of",
     "get_pose",
     "mk_env",
+    "override_action_space",
     "pipe",
     "register",
     "set_pose",
@@ -39,6 +41,8 @@ def __getattr__(name):
         return import_module("utils.datahandler").DataHandler
     if name == "register":
         return import_module("utils.load").register
+    if name in {"get_memory", "override_action_space"}:
+        return getattr(import_module("utils.load"), name)
     if name == "split_dataset":
         return import_module("utils.datasets").split_dataset
     if name in _MJX_EXPORTS:
@@ -62,7 +66,7 @@ def mk_env(*args, **kwargs):
 if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
     from utils.datahandler import DataHandler
     from utils.datasets import split_dataset
-    from utils.load import register
+    from utils.load import get_memory, override_action_space, register
     from utils.mjx import (
         ObjType,
         does_exist,

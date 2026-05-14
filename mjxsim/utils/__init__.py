@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from . import load
 
+get_memory = load.get_memory
+override_action_space = load.override_action_space
 register = load.register
 
 __all__ = [
@@ -15,6 +17,7 @@ __all__ = [
     "cable",
     "does_exist",
     "get_ids",
+    "get_memory",
     "get_names",
     "get_number_of",
     "get_pose",
@@ -22,6 +25,7 @@ __all__ = [
     "mjx",
     "mk_env",
     "modelling",
+    "override_action_space",
     "pipe",
     "register",
     "set_pose",

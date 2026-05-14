@@ -59,3 +59,24 @@ class Agent(SkrlAgent):
         for model in self.models_il.values():
             if model is not None:
                 model.enable_training_mode(enabled)
+
+    @staticmethod
+    def _state_inputs(states: torch.Tensor, **kwargs: Any) -> dict[str, Any]:
+        """Build model inputs compatible with skrl 2 and older local models."""
+        return {"observations": states, "states": states, **kwargs}
+
+    @staticmethod
+    def _unpack_act_result(result: Any) -> tuple[torch.Tensor, dict[str, Any]]:
+        """Normalize skrl 2 ``(value, outputs)`` and legacy 3-tuples."""
+        if not isinstance(result, tuple):
+            return result, {}
+        if len(result) == 2:
+            value, outputs = result
+            return value, outputs or {}
+        if len(result) == 3:
+            value, log_prob, outputs = result
+            outputs = dict(outputs or {})
+            if log_prob is not None:
+                outputs.setdefault("log_prob", log_prob)
+            return value, outputs
+        raise ValueError(f"Unsupported act result with {len(result)} values")

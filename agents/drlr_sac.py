@@ -290,22 +290,28 @@ class DRLR(Agent):
     ):
         if target:
             # target policy smoothing
-            rl_actions, next_log_prob, _ = self.policy.act(
-                {"states": obs}, role="policy"
+            rl_actions, policy_outputs = self._unpack_act_result(
+                self.policy.act(self._state_inputs(obs), role="policy")
             )
+            next_log_prob = policy_outputs["log_prob"]
         else:
             # sample stochastic actions
             with torch.autocast(
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
-                rl_actions, _, outputs = self.policy.act(
-                    {"states": self._state_preprocessor(obs)}, role="policy"
+                rl_actions, outputs = self._unpack_act_result(
+                    self.policy.act(
+                        self._state_inputs(self._state_preprocessor(obs)),
+                        role="policy",
+                    )
                 )
 
         # Get IL actions
         self.IL_policy.eval()
-        il_actions, _, _ = self.IL_policy.act(
-            {"states": self._state_preprocessor(exp_obs)}, role="policy"
+        il_actions, _ = self._unpack_act_result(
+            self.IL_policy.act(
+                self._state_inputs(self._state_preprocessor(exp_obs)), role="policy"
+            )
         )
 
         # Stack actions and get batch dimensions
@@ -324,8 +330,10 @@ class DRLR(Agent):
         )
 
         if torch.mean(target_q_il) > torch.mean(target_q_rl):
-            il_actions, _, _ = self.IL_policy.act(
-                {"states": self._state_preprocessor(obs)}, role="policy"
+            il_actions, _ = self._unpack_act_result(
+                self.IL_policy.act(
+                    self._state_inputs(self._state_preprocessor(obs)), role="policy"
+                )
             )
             actions = il_actions
 
@@ -339,11 +347,18 @@ class DRLR(Agent):
             self.track_data(
                 "Q-network / select_il_Q (mean)", torch.mean(target_q_il).item()
             )
-            return actions, _, outputs
+            return actions, None, outputs
         else:
-            return actions, next_log_prob, _
+            return actions, next_log_prob, {}
 
-    def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+    def act(
+        self,
+        observations: torch.Tensor,
+        states: torch.Tensor | None = None,
+        *,
+        timestep: int,
+        timesteps: int,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Process the environment's states to make a decision (actions) using the main policy
 
         :param states: Environment's states
@@ -356,10 +371,12 @@ class DRLR(Agent):
         :return: Actions
         :rtype: torch.Tensor
         """
+        states = observations
+
         # sample random actions
         if timestep < self._random_timesteps:
             return self.policy.random_act(
-                {"states": self._state_preprocessor(states)}, role="policy"
+                self._state_inputs(self._state_preprocessor(states)), role="policy"
             )
 
         expert_states_r = self.expert_memory.sample(
@@ -371,14 +388,17 @@ class DRLR(Agent):
             states, expert_states_r, soft=True, target=False
         )
 
-        return actions, None, outputs
+        return actions, outputs or {}
 
     def record_transition(
         self,
-        states: torch.Tensor,
+        *,
+        observations: torch.Tensor,
+        states: torch.Tensor | None,
         actions: torch.Tensor,
         rewards: torch.Tensor,
-        next_states: torch.Tensor,
+        next_observations: torch.Tensor,
+        next_states: torch.Tensor | None,
         terminated: torch.Tensor,
         truncated: torch.Tensor,
         infos: Any,
@@ -406,16 +426,21 @@ class DRLR(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
+        states = observations
+        next_states = next_observations
+
         super().record_transition(
-            states,
-            actions,
-            rewards,
-            next_states,
-            terminated,
-            truncated,
-            infos,
-            timestep,
-            timesteps,
+            observations=observations,
+            states=states,
+            actions=actions,
+            rewards=rewards,
+            next_observations=next_observations,
+            next_states=next_states,
+            terminated=terminated,
+            truncated=truncated,
+            infos=infos,
+            timestep=timestep,
+            timesteps=timesteps,
         )
 
         if timestep < self._random_timesteps + self._learning_starts - 1:
@@ -440,7 +465,7 @@ class DRLR(Agent):
         # if timestep == timesteps - 1:
         #     self.memory.save("./Demos", "csv")
 
-    def pre_interaction(self, timestep: int, timesteps: int) -> None:
+    def pre_interaction(self, *, timestep: int, timesteps: int) -> None:
         """Callback called before the interaction with the environment
 
         :param timestep: Current timestep
@@ -450,7 +475,7 @@ class DRLR(Agent):
         """
         pass
 
-    def post_interaction(self, timestep: int, timesteps: int) -> None:
+    def post_interaction(self, *, timestep: int, timesteps: int) -> None:
         """Callback called after the interaction with the environment
 
         :param timestep: Current timestep
@@ -458,23 +483,30 @@ class DRLR(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        if timestep >= self._learning_starts:
-            self.enable_training_mode(True, apply_to_models=True)
-            self._update(timestep, timesteps)
-            self.enable_training_mode(False, apply_to_models=True)
+        if self.training and timestep >= self._learning_starts:
+            self.enable_models_training_mode(True)
+            self.update(timestep=timestep, timesteps=timesteps)
+            self.enable_models_training_mode(False)
 
         # write tracking data and checkpoints
-        super().post_interaction(timestep, timesteps)
+        super().post_interaction(timestep=timestep, timesteps=timesteps)
+
+    def update(self, *, timestep: int, timesteps: int) -> None:
+        self._update(timestep, timesteps)
 
     def _compute_min_q_values(self, states, actions):
         """Helper to compute target Q-values using both critics"""
-        target_q1_value, _, _ = self.target_critic_1.act(
-            {"states": states, "taken_actions": actions},
-            role="target_critic_1",
+        target_q1_value, _ = self._unpack_act_result(
+            self.target_critic_1.act(
+                self._state_inputs(states, taken_actions=actions),
+                role="target_critic_1",
+            )
         )
-        target_q2_value, _, _ = self.target_critic_2.act(
-            {"states": states, "taken_actions": actions},
-            role="target_critic_2",
+        target_q2_value, _ = self._unpack_act_result(
+            self.target_critic_2.act(
+                self._state_inputs(states, taken_actions=actions),
+                role="target_critic_2",
+            )
         )
         return torch.min(target_q1_value, target_q2_value)
 
@@ -536,13 +568,21 @@ class DRLR(Agent):
                     # next_actions, next_log_prob, _ = self._select_act(sampled_next_states, sampled_next_states, soft=True,
                     #                                       target=True)  # DRLR core modification
 
-                    target_q1_values, _, _ = self.target_critic_1.act(
-                        {"states": sampled_next_states, "taken_actions": next_actions},
-                        role="target_critic_1",
+                    target_q1_values, _ = self._unpack_act_result(
+                        self.target_critic_1.act(
+                            self._state_inputs(
+                                sampled_next_states, taken_actions=next_actions
+                            ),
+                            role="target_critic_1",
+                        )
                     )
-                    target_q2_values, _, _ = self.target_critic_2.act(
-                        {"states": sampled_next_states, "taken_actions": next_actions},
-                        role="target_critic_2",
+                    target_q2_values, _ = self._unpack_act_result(
+                        self.target_critic_2.act(
+                            self._state_inputs(
+                                sampled_next_states, taken_actions=next_actions
+                            ),
+                            role="target_critic_2",
+                        )
                     )
                     target_q_values = (
                         torch.min(target_q1_values, target_q2_values)
@@ -561,13 +601,17 @@ class DRLR(Agent):
                         * target_q_values
                     ).mean()
 
-            critic_1_values, _, _ = self.critic_1.act(
-                {"states": sampled_states, "taken_actions": sampled_actions},
-                role="critic_1",
+            critic_1_values, _ = self._unpack_act_result(
+                self.critic_1.act(
+                    self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                    role="critic_1",
+                )
             )
-            critic_2_values, _, _ = self.critic_2.act(
-                {"states": sampled_states, "taken_actions": sampled_actions},
-                role="critic_2",
+            critic_2_values, _ = self._unpack_act_result(
+                self.critic_2.act(
+                    self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                    role="critic_2",
+                )
             )
             critic_loss = F.mse_loss(
                 critic_1_values, target_values
@@ -601,16 +645,21 @@ class DRLR(Agent):
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
                 # compute policy (actor) loss
-                actions, log_prob, _ = self.policy.act(
-                    {"states": sampled_states}, role="policy"
+                actions, outputs = self._unpack_act_result(
+                    self.policy.act(self._state_inputs(sampled_states), role="policy")
                 )
-                critic_1_values, _, _ = self.critic_1.act(
-                    {"states": sampled_states, "taken_actions": actions},
-                    role="critic_1",
+                log_prob = outputs["log_prob"]
+                critic_1_values, _ = self._unpack_act_result(
+                    self.critic_1.act(
+                        self._state_inputs(sampled_states, taken_actions=actions),
+                        role="critic_1",
+                    )
                 )
-                critic_2_values, _, _ = self.critic_2.act(
-                    {"states": sampled_states, "taken_actions": actions},
-                    role="critic_2",
+                critic_2_values, _ = self._unpack_act_result(
+                    self.critic_2.act(
+                        self._state_inputs(sampled_states, taken_actions=actions),
+                        role="critic_2",
+                    )
                 )
 
                 policy_loss = (

@@ -4,6 +4,10 @@ typings/
 runs/
 examples/.runs/
 examples/.data/
+sandbox/
+agents/drlr2_sac copy 2.py
+agents/drlr2_sac copy.py
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

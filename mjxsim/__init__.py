@@ -21,6 +21,12 @@ if TYPE_CHECKING:
         VISION_DP_CFG,
         DiffusionPolicyVision,
     )
+    from mjxsim.agents.drlr_sac import DRLR, DRLR_CFG, DRLR_DEFAULT_CONFIG  # noqa: F401
+    from mjxsim.agents.drlr2_sac import (  # noqa: F401
+        DRLR2,
+        DRLR2_SAC_CFG,
+        DRLR2_SAC_DEFAULT_CONFIG,
+    )
     from mjxsim.agents.ibrl_base_agent import Agent  # noqa: F401
     from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
     from mjxsim.agents.variational_autoencoder import (  # noqa: F401
@@ -49,7 +55,11 @@ if TYPE_CHECKING:
     from mjxsim.trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
     from mjxsim.utils.datahandler import DataHandler  # noqa: F401
     from mjxsim.utils.datasets import split_dataset  # noqa: F401
-    from mjxsim.utils.load import register  # noqa: F401
+    from mjxsim.utils.load import (  # noqa: F401
+        get_memory,
+        override_action_space,
+        register,
+    )
     from mjxsim.utils.mjx import (  # noqa: F401
         ObjType,
         does_exist,
@@ -77,6 +87,12 @@ _AGENT_EXPORTS = [
     "DP_CFG",
     "DiffusionPolicy",
     "DiffusionPolicyVision",
+    "DRLR",
+    "DRLR2",
+    "DRLR2_SAC_CFG",
+    "DRLR2_SAC_DEFAULT_CONFIG",
+    "DRLR_CFG",
+    "DRLR_DEFAULT_CONFIG",
     "EMAModel",
     "IBRL",
     "IBRL_SAC_CFG",
@@ -111,9 +127,11 @@ _UTIL_EXPORTS = [
     "cable",
     "does_exist",
     "get_ids",
+    "get_memory",
     "get_names",
     "get_number_of",
     "get_pose",
+    "override_action_space",
     "pipe",
     "register",
     "set_pose",
@@ -133,6 +151,12 @@ _EXPORT_MODULES = {
     "DP_CFG": "mjxsim.agents.diffusion_policy_state",
     "DiffusionPolicy": "mjxsim.agents.diffusion_policy_state",
     "DiffusionPolicyVision": "mjxsim.agents.diffusion_policy_vision",
+    "DRLR": "mjxsim.agents.drlr_sac",
+    "DRLR2": "mjxsim.agents.drlr2_sac",
+    "DRLR2_SAC_CFG": "mjxsim.agents.drlr2_sac",
+    "DRLR2_SAC_DEFAULT_CONFIG": "mjxsim.agents.drlr2_sac",
+    "DRLR_CFG": "mjxsim.agents.drlr_sac",
+    "DRLR_DEFAULT_CONFIG": "mjxsim.agents.drlr_sac",
     "EMAModel": "mjxsim.agents.diffusion_policy_state",
     "IBRL": "mjxsim.agents.ibrl_sac",
     "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
@@ -162,9 +186,11 @@ _EXPORT_MODULES = {
     "cable": "mjxsim.utils.modelling",
     "does_exist": "mjxsim.utils.mjx",
     "get_ids": "mjxsim.utils.mjx",
+    "get_memory": "mjxsim.utils.load",
     "get_names": "mjxsim.utils.mjx",
     "get_number_of": "mjxsim.utils.mjx",
     "get_pose": "mjxsim.utils.mjx",
+    "override_action_space": "mjxsim.utils.load",
     "pipe": "mjxsim.utils.modelling",
     "register": "mjxsim.utils.load",
     "set_pose": "mjxsim.utils.mjx",
@@ -175,6 +201,8 @@ _EXPORT_MODULES = {
 _OPTIONAL_DEPENDENCIES = {
     "DiffusionPolicy": "torch",
     "DiffusionPolicyVision": "torch",
+    "DRLR": "skrl",
+    "DRLR2": "skrl",
     "IBRL": "skrl",
     "VariationalAutoencoder": "torch",
     "VariationalAutoencoderAgent": "skrl",
@@ -185,6 +213,8 @@ _OPTIONAL_DEPENDENCIES = {
     "MocapReach": "mujoco",
     "PipeInsert2": "mujoco",
     "PushTEnv": "gym",
+    "get_memory": "skrl",
+    "override_action_space": "gymnasium",
     "SequentialTrainerPlus": "skrl",
     "SupervisedTrainer": "torch",
 }

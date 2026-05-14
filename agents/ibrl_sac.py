@@ -237,6 +237,7 @@ class IBRL(Agent):
         # used to keep track of observations for diffusion policy
         self._states: torch.Tensor = None
         self._prev_states: torch.Tensor = None
+        self._state_window_timestep: int | None = None
 
         # set up automatic mixed precision
         self._device_type = torch.device(self.device).type
@@ -331,21 +332,27 @@ class IBRL(Agent):
         """
         if target:
             # target policy smoothing
-            rl_actions, next_log_prob, _ = self.policy.act(
-                {"states": rl_obs}, role="policy"
+            rl_actions, policy_outputs = self._unpack_act_result(
+                self.policy.act(self._state_inputs(rl_obs), role="policy")
             )
+            next_log_prob = policy_outputs["log_prob"]
         else:
             # sample stochastic actions
             with torch.autocast(
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
-                rl_actions, _, outputs = self.policy.act(
-                    {"states": self._state_preprocessor(rl_obs)}, role="policy"
+                rl_actions, outputs = self._unpack_act_result(
+                    self.policy.act(
+                        self._state_inputs(self._state_preprocessor(rl_obs)),
+                        role="policy",
+                    )
                 )
 
-        il_actions, _, _ = self.IL_policy.act(
-            {"states": self._state_preprocessor(il_obs)},
-            role="policy",
+        il_actions, _ = self._unpack_act_result(
+            self.IL_policy.act(
+                self._state_inputs(self._state_preprocessor(il_obs)),
+                role="policy",
+            )
         )
 
         il_actions = il_actions[:, 0, :]
@@ -431,7 +438,7 @@ class IBRL(Agent):
             )
             il_selected = (torch.mean(target_q_il) > torch.mean(target_q_rl)).float()
             self.track_data("Online / IL selection probability", il_selected.item())
-            return actions, outputs, il_selected
+            return actions, None, outputs
         else:
             self.track_data(
                 "Q-network / select_rl_Q (max)", torch.max(target_q_rl).item()
@@ -450,7 +457,15 @@ class IBRL(Agent):
                 "Bootstrap / select_il_Q (mean)", torch.mean(target_q_il).item()
             )
 
-            return actions, next_log_prob, _
+            return actions, next_log_prob, {}
+
+    def _set_current_states(self, states: torch.Tensor, timestep: int) -> None:
+        if self._states is None or self._states.shape[0] != states.shape[0]:
+            self._prev_states = states
+        else:
+            self._prev_states = self._states
+        self._states = states
+        self._state_window_timestep = timestep
 
     def act(
         self,
@@ -459,7 +474,7 @@ class IBRL(Agent):
         *,
         timestep: int,
         timesteps: int,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Process environment states and return an action tuple.
 
         :param states: Environment's states
@@ -473,14 +488,13 @@ class IBRL(Agent):
         :rtype: tuple[torch.Tensor, Optional[torch.Tensor], Optional[Any]]
         """
         # sample random actions
-        states = observations if states is None else states
-        if self._states is None or self._states.shape[0] != states.shape[0]:
-            self._states = states
-            self._prev_states = states
+        states = observations
+        if self._state_window_timestep != timestep:
+            self._set_current_states(states, timestep)
 
         if timestep < self._random_timesteps:
             return self.policy.random_act(
-                {"states": self._state_preprocessor(states)}, role="policy"
+                self._state_inputs(self._state_preprocessor(states)), role="policy"
             )
 
         # sample from expert buffer
@@ -503,7 +517,7 @@ class IBRL(Agent):
 
         il_states = torch.stack([self._prev_states, self._states], axis=1)
 
-        actions, _, _ = self._select_act(
+        actions, _, outputs = self._select_act(
             rl_obs=states,
             il_obs=il_states,
             exp_obs=expert_states,
@@ -512,21 +526,22 @@ class IBRL(Agent):
             timestep=timestep,
         )
 
-        return actions, None, None
+        return actions, outputs or {}
 
     def record_transition(
         self,
-        observations: torch.Tensor | None = None,
+        *,
+        observations: torch.Tensor,
         states: torch.Tensor | None = None,
-        actions: torch.Tensor | None = None,
-        rewards: torch.Tensor | None = None,
-        next_observations: torch.Tensor | None = None,
+        actions: torch.Tensor,
+        rewards: torch.Tensor,
+        next_observations: torch.Tensor,
         next_states: torch.Tensor | None = None,
-        terminated: torch.Tensor | None = None,
-        truncated: torch.Tensor | None = None,
+        terminated: torch.Tensor,
+        truncated: torch.Tensor,
         infos: Any = None,
-        timestep: int = 0,
-        timesteps: int = 0,
+        timestep: int,
+        timesteps: int,
     ) -> None:
         """Record an environment transition in memory and expert buffer.
 
@@ -549,8 +564,8 @@ class IBRL(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        states = observations if states is None else states
-        next_states = next_observations if next_states is None else next_states
+        states = observations
+        next_states = next_observations
         if states is None or next_states is None:
             raise ValueError(
                 "states/observations and next_states/next_observations are required"
@@ -592,9 +607,9 @@ class IBRL(Agent):
 
     def pre_interaction(
         self,
-        states: torch.Tensor | None = None,
         *,
         observations: torch.Tensor | None = None,
+        states: torch.Tensor | None = None,
         timestep: int,
         timesteps: int,
     ) -> None:
@@ -606,20 +621,13 @@ class IBRL(Agent):
         :type timesteps: int
         """
         states = observations if states is None else states
-        if states is None:
-            return
-        # save the state for diffusion policy observation horizon
-        self._states = states
-        if self._prev_states is None:
-            self._prev_states = self._states
-        else:
-            if self._prev_states.shape[0] != self._states.shape[0]:
-                self._prev_states = self._states
+        if states is not None:
+            self._set_current_states(states, timestep)
 
     def post_interaction(
         self,
-        next_states: torch.Tensor | None = None,
         *,
+        next_states: torch.Tensor | None = None,
         next_observations: torch.Tensor | None = None,
         terminated: torch.Tensor | None = None,
         timestep: int,
@@ -640,10 +648,10 @@ class IBRL(Agent):
         if next_states is not None:
             self._prev_states = next_states
 
-        if timestep >= self._learning_starts:
-            self.enable_training_mode(True, apply_to_models=True)
-            self._update(timestep, timesteps)
-            self.enable_training_mode(False, apply_to_models=True)
+        if self.training and timestep >= self._learning_starts:
+            self.enable_models_training_mode(True)
+            self.update(timestep=timestep, timesteps=timesteps)
+            self.enable_models_training_mode(False)
 
         # write tracking data and checkpoints
         super().post_interaction(timestep=timestep, timesteps=timesteps)
@@ -676,9 +684,11 @@ class IBRL(Agent):
                 states = states.unsqueeze(0)
             if len(actions.shape) == 1:
                 actions = actions.unsqueeze(0)
-            target_q_val, _, _ = self.target_critics[idx].act(
-                {"states": states, "taken_actions": actions},
-                role=f"target_critic_{idx + 1}",
+            target_q_val, _ = self._unpack_act_result(
+                self.target_critics[idx].act(
+                    self._state_inputs(states, taken_actions=actions),
+                    role=f"target_critic_{idx + 1}",
+                )
             )
             target_q_values_list.append(target_q_val)
 
@@ -752,13 +762,21 @@ class IBRL(Agent):
                         timestep=timestep,
                     )
 
-                    target_q1_values, _, _ = self.target_critic_1.act(
-                        {"states": sampled_next_states, "taken_actions": next_actions},
-                        role="target_critic_1",
+                    target_q1_values, _ = self._unpack_act_result(
+                        self.target_critic_1.act(
+                            self._state_inputs(
+                                sampled_next_states, taken_actions=next_actions
+                            ),
+                            role="target_critic_1",
+                        )
                     )
-                    target_q2_values, _, _ = self.target_critic_2.act(
-                        {"states": sampled_next_states, "taken_actions": next_actions},
-                        role="target_critic_2",
+                    target_q2_values, _ = self._unpack_act_result(
+                        self.target_critic_2.act(
+                            self._state_inputs(
+                                sampled_next_states, taken_actions=next_actions
+                            ),
+                            role="target_critic_2",
+                        )
                     )
                     target_q_values = (
                         torch.min(target_q1_values, target_q2_values)
@@ -772,13 +790,17 @@ class IBRL(Agent):
                     )
 
                 # compute critic loss
-                critic_1_values, _, _ = self.critic_1.act(
-                    {"states": sampled_states, "taken_actions": sampled_actions},
-                    role="critic_1",
+                critic_1_values, _ = self._unpack_act_result(
+                    self.critic_1.act(
+                        self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                        role="critic_1",
+                    )
                 )
-                critic_2_values, _, _ = self.critic_2.act(
-                    {"states": sampled_states, "taken_actions": sampled_actions},
-                    role="critic_2",
+                critic_2_values, _ = self._unpack_act_result(
+                    self.critic_2.act(
+                        self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                        role="critic_2",
+                    )
                 )
 
                 # OBS sum, not average
@@ -809,16 +831,21 @@ class IBRL(Agent):
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
                 # compute policy (actor) loss
-                actions, log_prob, _ = self.policy.act(
-                    {"states": sampled_states}, role="policy"
+                actions, outputs = self._unpack_act_result(
+                    self.policy.act(self._state_inputs(sampled_states), role="policy")
                 )
-                critic_1_values, _, _ = self.critic_1.act(
-                    {"states": sampled_states, "taken_actions": actions},
-                    role="critic_1",
+                log_prob = outputs["log_prob"]
+                critic_1_values, _ = self._unpack_act_result(
+                    self.critic_1.act(
+                        self._state_inputs(sampled_states, taken_actions=actions),
+                        role="critic_1",
+                    )
                 )
-                critic_2_values, _, _ = self.critic_2.act(
-                    {"states": sampled_states, "taken_actions": actions},
-                    role="critic_2",
+                critic_2_values, _ = self._unpack_act_result(
+                    self.critic_2.act(
+                        self._state_inputs(sampled_states, taken_actions=actions),
+                        role="critic_2",
+                    )
                 )
 
                 bc_loss = F.mse_loss(actions, sampled_actions)

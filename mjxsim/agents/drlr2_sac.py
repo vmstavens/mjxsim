@@ -264,6 +264,7 @@ class DRLR2(Agent):
         # used to keep track of observations for diffusion policy
         self._states: torch.Tensor = None
         self._prev_states: torch.Tensor = None
+        self._state_window_timestep: int | None = None
 
         # set up automatic mixed precision
         self._device_type = torch.device(self.device).type
@@ -374,27 +375,35 @@ class DRLR2(Agent):
 
         if target:
             # target policy smoothing
-            rl_actions, next_log_prob, _ = self.policy.act(
-                {"states": self._state_preprocessor(rl_obs)}, role="policy"
+            rl_actions, policy_outputs = self._unpack_act_result(
+                self.policy.act(
+                    self._state_inputs(self._state_preprocessor(rl_obs)),
+                    role="policy",
+                )
             )
+            next_log_prob = policy_outputs["log_prob"]
         else:
             # sample stochastic actions
             with torch.autocast(
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
-                rl_actions, _, outputs = self.policy.act(
-                    {"states": self._state_preprocessor(rl_obs)},
-                    role="policy",
+                rl_actions, outputs = self._unpack_act_result(
+                    self.policy.act(
+                        self._state_inputs(self._state_preprocessor(rl_obs)),
+                        role="policy",
+                    )
                 )
 
         # here rl_actions are [-1, 1]
 
         # Get IL actions
         # a_{il} ← µ ( s_{t} )
-        il_actions, _, _ = self.IL_policy.act(
-            {"states": exp_obs},
-            role="policy",
-            unnormalize_act=False,
+        il_actions, _ = self._unpack_act_result(
+            self.IL_policy.act(
+                self._state_inputs(exp_obs),
+                role="policy",
+                unnormalize_act=False,
+            )
         )
         # Here il_actions are [-1, 1]
 
@@ -413,10 +422,12 @@ class DRLR2(Agent):
 
         if torch.mean(target_q_il) > torch.mean(target_q_rl):
             # IL wins: reuse the single-step IL action to keep shape (num_envs, a_dim)
-            il_actions, _, _ = self.IL_policy.act(
-                {"states": il_obs},
-                role="policy",
-                unnormalize_act=True,
+            il_actions, _ = self._unpack_act_result(
+                self.IL_policy.act(
+                    self._state_inputs(il_obs),
+                    role="policy",
+                    unnormalize_act=True,
+                )
             )
             actions = il_actions[:, 0, :]
             self.track_data("Which / Actor", 1)
@@ -435,7 +446,7 @@ class DRLR2(Agent):
             il_selected = (torch.mean(target_q_il) > torch.mean(target_q_rl)).float()
             self.track_data("Online / IL selection probability", il_selected.item())
 
-            return actions, _, outputs
+            return actions, None, outputs
         else:
             il_selected = (torch.mean(target_q_il) > torch.mean(target_q_rl)).float()
             # -------
@@ -446,7 +457,7 @@ class DRLR2(Agent):
                 "Bootstrap / select_il_Q (mean)", torch.mean(target_q_il).item()
             )
             self.track_data("Bootstrap / IL selection probability", il_selected.item())
-            return actions, next_log_prob, _
+            return actions, next_log_prob, {}
 
     def _unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
         if action is None:
@@ -480,7 +491,22 @@ class DRLR2(Agent):
         normalized = 2.0 * (action - low) / scale - 1.0
         return normalized.clamp(-1.0, 1.0)
 
-    def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+    def _set_current_states(self, states: torch.Tensor, timestep: int) -> None:
+        if self._states is None or self._states.shape[0] != states.shape[0]:
+            self._prev_states = states
+        else:
+            self._prev_states = self._states
+        self._states = states
+        self._state_window_timestep = timestep
+
+    def act(
+        self,
+        observations: torch.Tensor,
+        states: torch.Tensor | None = None,
+        *,
+        timestep: int,
+        timesteps: int,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Process environment states and return an action tuple.
 
         :param states: Environment's states
@@ -493,22 +519,28 @@ class DRLR2(Agent):
         :return: Actions, log-probabilities, and extra outputs (unused)
         :rtype: tuple[torch.Tensor, Optional[torch.Tensor], Optional[Any]]
         """
+        states = observations
+        if self._state_window_timestep != timestep:
+            self._set_current_states(states, timestep)
+
         # sample random actions
         if timestep < self._random_timesteps:
             return self.policy.random_act(
-                {"states": self._state_preprocessor(states)}, role="policy"
+                self._state_inputs(self._state_preprocessor(states)), role="policy"
             )
 
         if timestep < self._warmup_timesteps:
             il_states = torch.stack([self._prev_states, self._states], axis=1)
-            il_actions, _, _ = self.IL_policy.act(
-                {"states": il_states},
-                role="policy",
-                unnormalize_act=True,
+            il_actions, _ = self._unpack_act_result(
+                self.IL_policy.act(
+                    self._state_inputs(il_states),
+                    role="policy",
+                    unnormalize_act=True,
+                )
             )
             il_actions = il_actions[:, 0, :]
 
-            return il_actions, None, None
+            return il_actions, {}
         (
             expert_states,
             expert_actions,
@@ -543,14 +575,17 @@ class DRLR2(Agent):
             timestep=timestep,
         )
 
-        return actions, None, output
+        return actions, output or {}
 
     def record_transition(
         self,
-        states: torch.Tensor,
+        *,
+        observations: torch.Tensor,
+        states: torch.Tensor | None,
         actions: torch.Tensor,
         rewards: torch.Tensor,
-        next_states: torch.Tensor,
+        next_observations: torch.Tensor,
+        next_states: torch.Tensor | None,
         terminated: torch.Tensor,
         truncated: torch.Tensor,
         infos: Any,
@@ -578,16 +613,21 @@ class DRLR2(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
+        states = observations
+        next_states = next_observations
+
         super().record_transition(
-            states,
-            actions,
-            rewards,
-            next_states,
-            terminated,
-            truncated,
-            infos,
-            timestep,
-            timesteps,
+            observations=observations,
+            states=states,
+            actions=actions,
+            rewards=rewards,
+            next_observations=next_observations,
+            next_states=next_states,
+            terminated=terminated,
+            truncated=truncated,
+            infos=infos,
+            timestep=timestep,
+            timesteps=timesteps,
         )
 
         if timestep < self._random_timesteps + self._learning_starts - 1:
@@ -611,7 +651,12 @@ class DRLR2(Agent):
         )
 
     def pre_interaction(
-        self, states: torch.Tensor, timestep: int, timesteps: int
+        self,
+        *,
+        observations: torch.Tensor | None = None,
+        states: torch.Tensor | None = None,
+        timestep: int,
+        timesteps: int,
     ) -> None:
         """Callback called before the interaction with the environment.
 
@@ -620,15 +665,18 @@ class DRLR2(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        # Shift the last observation so the DP sees [previous_state, current_state].
-        if self._states is None or self._states.shape[0] != states.shape[0]:
-            self._prev_states = states
-        else:
-            self._prev_states = self._states
-        self._states = states
+        states = observations if states is None else states
+        if states is not None:
+            self._set_current_states(states, timestep)
 
     def post_interaction(
-        self, next_states: torch.Tensor, timestep: int, timesteps: int
+        self,
+        *,
+        next_observations: torch.Tensor | None = None,
+        next_states: torch.Tensor | None = None,
+        terminated: torch.Tensor | None = None,
+        timestep: int,
+        timesteps: int,
     ) -> None:
         """Callback called after the interaction with the environment.
 
@@ -640,16 +688,20 @@ class DRLR2(Agent):
         :type timesteps: int
         """
 
-        # save the next state for diffusion policy observation horizon
-        self._prev_states = next_states
+        next_states = next_observations if next_states is None else next_states
+        if next_states is not None:
+            self._prev_states = next_states
 
-        if timestep >= self._learning_starts:
-            self.enable_training_mode(True, apply_to_models=True)
-            self._update(timestep, timesteps)
-            self.enable_training_mode(False, apply_to_models=True)
+        if self.training and timestep >= self._learning_starts:
+            self.enable_models_training_mode(True)
+            self.update(timestep=timestep, timesteps=timesteps)
+            self.enable_models_training_mode(False)
 
         # write tracking data and checkpoints
-        super().post_interaction(timestep, timesteps)
+        super().post_interaction(timestep=timestep, timesteps=timesteps)
+
+    def update(self, *, timestep: int, timesteps: int) -> None:
+        self._update(timestep, timesteps)
 
     def _compute_min_q_values(
         self, states: torch.Tensor, actions: torch.Tensor
@@ -671,9 +723,11 @@ class DRLR2(Agent):
                 states = states.unsqueeze(0)
             if len(actions.shape) == 1:
                 actions = actions.unsqueeze(0)
-            target_q_val, _, _ = self.target_critics[idx].act(
-                {"states": states, "taken_actions": actions},
-                role=f"target_critic_{idx + 1}",
+            target_q_val, _ = self._unpack_act_result(
+                self.target_critics[idx].act(
+                    self._state_inputs(states, taken_actions=actions),
+                    role=f"target_critic_{idx + 1}",
+                )
             )
             target_q_values_list.append(target_q_val)
 
@@ -741,19 +795,21 @@ class DRLR2(Agent):
                         timestep=timestep,
                     )
 
-                    target_q1_values, _, _ = self.target_critic_1.act(
-                        {
-                            "states": sampled_next_states_rl,
-                            "taken_actions": next_actions,
-                        },
-                        role="target_critic_1",
+                    target_q1_values, _ = self._unpack_act_result(
+                        self.target_critic_1.act(
+                            self._state_inputs(
+                                sampled_next_states_rl, taken_actions=next_actions
+                            ),
+                            role="target_critic_1",
+                        )
                     )
-                    target_q2_values, _, _ = self.target_critic_2.act(
-                        {
-                            "states": sampled_next_states_rl,
-                            "taken_actions": next_actions,
-                        },
-                        role="target_critic_2",
+                    target_q2_values, _ = self._unpack_act_result(
+                        self.target_critic_2.act(
+                            self._state_inputs(
+                                sampled_next_states_rl, taken_actions=next_actions
+                            ),
+                            role="target_critic_2",
+                        )
                     )
                     target_q_values = (
                         torch.min(target_q1_values, target_q2_values)
@@ -776,13 +832,21 @@ class DRLR2(Agent):
                 sampled_actions = self._normalize_action(sampled_actions)
 
                 # compute critic loss
-                critic_1_values, _, _ = self.critic_1.act(
-                    {"states": sampled_states_rl, "taken_actions": sampled_actions},
-                    role="critic_1",
+                critic_1_values, _ = self._unpack_act_result(
+                    self.critic_1.act(
+                        self._state_inputs(
+                            sampled_states_rl, taken_actions=sampled_actions
+                        ),
+                        role="critic_1",
+                    )
                 )
-                critic_2_values, _, _ = self.critic_2.act(
-                    {"states": sampled_states_rl, "taken_actions": sampled_actions},
-                    role="critic_2",
+                critic_2_values, _ = self._unpack_act_result(
+                    self.critic_2.act(
+                        self._state_inputs(
+                            sampled_states_rl, taken_actions=sampled_actions
+                        ),
+                        role="critic_2",
+                    )
                 )
 
                 # OBS sum, not average
@@ -809,16 +873,23 @@ class DRLR2(Agent):
                 device_type=self._device_type, enabled=self._mixed_precision
             ):
                 # compute policy (actor) loss
-                actions, log_prob, _ = self.policy.act(
-                    {"states": sampled_states_rl}, role="policy"
+                actions, outputs = self._unpack_act_result(
+                    self.policy.act(
+                        self._state_inputs(sampled_states_rl), role="policy"
+                    )
                 )
-                critic_1_values, _, _ = self.critic_1.act(
-                    {"states": sampled_states_rl, "taken_actions": actions},
-                    role="critic_1",
+                log_prob = outputs["log_prob"]
+                critic_1_values, _ = self._unpack_act_result(
+                    self.critic_1.act(
+                        self._state_inputs(sampled_states_rl, taken_actions=actions),
+                        role="critic_1",
+                    )
                 )
-                critic_2_values, _, _ = self.critic_2.act(
-                    {"states": sampled_states_rl, "taken_actions": actions},
-                    role="critic_2",
+                critic_2_values, _ = self._unpack_act_result(
+                    self.critic_2.act(
+                        self._state_inputs(sampled_states_rl, taken_actions=actions),
+                        role="critic_2",
+                    )
                 )
 
                 bc_loss = F.mse_loss(actions, sampled_actions)
