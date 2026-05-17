@@ -8,6 +8,7 @@ sandbox/
 agents/drlr2_sac copy 2.py
 agents/drlr2_sac copy.py
 wandb/
+examples/drlr_pipe_insert_wandb_smoke.py
 
 
 # Byte-compiled / optimized / DLL files

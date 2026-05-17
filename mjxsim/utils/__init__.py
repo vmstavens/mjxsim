@@ -14,6 +14,8 @@ register = load.register
 __all__ = [
     "DataHandler",
     "ObjType",
+    "RobotInfoX",
+    "RobotX",
     "cable",
     "does_exist",
     "get_ids",
@@ -28,6 +30,7 @@ __all__ = [
     "override_action_space",
     "pipe",
     "register",
+    "robot",
     "set_pose",
     "set_state",
     "split_dataset",
@@ -45,10 +48,11 @@ _MJX_EXPORTS = {
 }
 
 _MODELLING_EXPORTS = {"cable", "pipe"}
+_ROBOT_EXPORTS = {"RobotInfoX", "RobotX"}
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"mjx", "modelling"}:
+    if name in {"mjx", "modelling", "robot"}:
         return import_module(f"mjxsim.utils.{name}")
     if name == "DataHandler":
         return import_module("mjxsim.utils.datahandler").DataHandler
@@ -58,6 +62,8 @@ def __getattr__(name: str) -> Any:
         return getattr(import_module("mjxsim.utils.mjx"), name)
     if name in _MODELLING_EXPORTS:
         return getattr(import_module("mjxsim.utils.modelling"), name)
+    if name in _ROBOT_EXPORTS:
+        return getattr(import_module("mjxsim.utils.robot"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -82,3 +88,4 @@ if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
         set_state,
     )
     from mjxsim.utils.modelling import cable, pipe
+    from mjxsim.utils.robot import RobotInfoX, RobotX

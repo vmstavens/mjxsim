@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 __all__ = [
     "DataHandler",
     "ObjType",
+    "RobotInfoX",
+    "RobotX",
     "cable",
     "does_exist",
     "get_ids",
@@ -34,6 +36,7 @@ _MJX_EXPORTS = {
 }
 
 _MODELLING_EXPORTS = {"cable", "pipe"}
+_ROBOT_EXPORTS = {"RobotInfoX", "RobotX"}
 
 
 def __getattr__(name):
@@ -49,6 +52,8 @@ def __getattr__(name):
         return getattr(import_module("utils.mjx"), name)
     if name in _MODELLING_EXPORTS:
         return getattr(import_module("utils.modelling"), name)
+    if name in _ROBOT_EXPORTS:
+        return getattr(import_module("utils.robot"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -78,3 +83,4 @@ if TYPE_CHECKING:  # pragma: no cover - for IDE/type checkers only
         set_state,
     )
     from utils.modelling import cable, pipe
+    from utils.robot import RobotInfoX, RobotX
