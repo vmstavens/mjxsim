@@ -650,6 +650,7 @@ class _VAEAgent(Agent):
         cls,
         path: str,
         device: str | torch.device | None = None,
+        stats: dict[str, Any] | None = None,
     ) -> "_VAEAgent":
         """Load a VAE agent from a checkpoint."""
         device = _resolve_device(device)
@@ -666,13 +667,14 @@ class _VAEAgent(Agent):
             models=models,
             device=device,
             config=config,
-            stats=checkpoint.get("stats"),
+            stats=checkpoint.get("stats") if stats is None else stats,
         )
         agent.model.load_state_dict(checkpoint["model_state_dict"])
 
         if checkpoint["optimizer_state_dict"]:
             agent.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         agent.is_trained = checkpoint.get("is_trained", False)
+        agent.enable_training_mode(False)
         return agent
 
 
