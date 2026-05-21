@@ -27,8 +27,22 @@ if TYPE_CHECKING:
         DRLR2_SAC_CFG,
         DRLR2_SAC_DEFAULT_CONFIG,
     )
+    from mjxsim.agents.gnn import (  # noqa: F401
+        GNN_CFG,
+        GNN_DEFAULT_CONFIG,
+        GNNAgent,
+        GraphConvolution,
+        GraphRegressionGCN,
+        normalized_chain_adjacency,
+    )
     from mjxsim.agents.ibrl_base_agent import Agent  # noqa: F401
     from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from mjxsim.agents.privileged_autoencoder import (  # noqa: F401
+        PAE_CFG,
+        PAE_DEFAULT_CONFIG,
+        PrivilegedAutoencoder,
+        PrivilegedAutoencoderAgent,
+    )
     from mjxsim.agents.variational_autoencoder import (  # noqa: F401
         VAE_CFG,
         VAE_STATE_CFG,
@@ -94,8 +108,17 @@ _AGENT_EXPORTS = [
     "DRLR_CFG",
     "DRLR_DEFAULT_CONFIG",
     "EMAModel",
+    "GNN_CFG",
+    "GNN_DEFAULT_CONFIG",
+    "GNNAgent",
+    "GraphConvolution",
+    "GraphRegressionGCN",
     "IBRL",
     "IBRL_SAC_CFG",
+    "PAE_CFG",
+    "PAE_DEFAULT_CONFIG",
+    "PrivilegedAutoencoder",
+    "PrivilegedAutoencoderAgent",
     "VAE_CFG",
     "VAE_STATE_CFG",
     "VAE_VISION_CFG",
@@ -106,6 +129,7 @@ _AGENT_EXPORTS = [
     "VariationalAutoencoderVision",
     "VariationalAutoencoderVisionAgent",
     "VISION_DP_CFG",
+    "normalized_chain_adjacency",
 ]
 
 _DATASET_EXPORTS = [
@@ -158,8 +182,17 @@ _EXPORT_MODULES = {
     "DRLR_CFG": "mjxsim.agents.drlr_sac",
     "DRLR_DEFAULT_CONFIG": "mjxsim.agents.drlr_sac",
     "EMAModel": "mjxsim.agents.diffusion_policy_state",
+    "GNN_CFG": "mjxsim.agents.gnn",
+    "GNN_DEFAULT_CONFIG": "mjxsim.agents.gnn",
+    "GNNAgent": "mjxsim.agents.gnn",
+    "GraphConvolution": "mjxsim.agents.gnn",
+    "GraphRegressionGCN": "mjxsim.agents.gnn",
     "IBRL": "mjxsim.agents.ibrl_sac",
     "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
+    "PAE_CFG": "mjxsim.agents.privileged_autoencoder",
+    "PAE_DEFAULT_CONFIG": "mjxsim.agents.privileged_autoencoder",
+    "PrivilegedAutoencoder": "mjxsim.agents.privileged_autoencoder",
+    "PrivilegedAutoencoderAgent": "mjxsim.agents.privileged_autoencoder",
     "VAE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_STATE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_VISION_CFG": "mjxsim.agents.variational_autoencoder",
@@ -170,6 +203,7 @@ _EXPORT_MODULES = {
     "VariationalAutoencoderVision": "mjxsim.agents.variational_autoencoder",
     "VariationalAutoencoderVisionAgent": "mjxsim.agents.variational_autoencoder",
     "VISION_DP_CFG": "mjxsim.agents.diffusion_policy_vision",
+    "normalized_chain_adjacency": "mjxsim.agents.gnn",
     "AttractorTrajectoryDataset": "datasets.attractor",
     "DemonstrationDataset": "datasets.demonstration",
     "ImageStateDataset": "datasets.vision",
@@ -203,7 +237,10 @@ _OPTIONAL_DEPENDENCIES = {
     "DiffusionPolicyVision": "torch",
     "DRLR": "skrl",
     "DRLR2": "skrl",
+    "GNNAgent": "torch",
     "IBRL": "skrl",
+    "PrivilegedAutoencoder": "torch",
+    "PrivilegedAutoencoderAgent": "torch",
     "VariationalAutoencoder": "torch",
     "VariationalAutoencoderAgent": "skrl",
     "VariationalAutoencoderState": "torch",

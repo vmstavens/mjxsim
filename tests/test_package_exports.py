@@ -18,7 +18,7 @@ def test_import_mjxsim_root() -> None:
 
 
 def test_namespaced_submodule_imports() -> None:
-    from mjxsim.agents import DiffusionPolicy
+    from mjxsim.agents import DiffusionPolicy, GNNAgent, PrivilegedAutoencoderAgent
     from mjxsim.datasets.pushert import PushTStateDataset
     from mjxsim.trainers import SupervisedTrainer
     from mjxsim.utils.datasets import split_dataset
@@ -26,6 +26,8 @@ def test_namespaced_submodule_imports() -> None:
     from mjxsim.utils.modelling import cable, pipe
 
     assert DiffusionPolicy.__name__ == "DiffusionPolicy"
+    assert GNNAgent.__name__ == "GNNAgent"
+    assert PrivilegedAutoencoderAgent.__name__ == "PrivilegedAutoencoderAgent"
     assert PushTStateDataset.__name__ == "PushTStateDataset"
     assert SupervisedTrainer.__name__ == "SupervisedTrainer"
     assert split_dataset.__name__ == "split_dataset"

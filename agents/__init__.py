@@ -23,7 +23,21 @@ if TYPE_CHECKING:
         DRLR2_SAC_CFG,
         DRLR2_SAC_DEFAULT_CONFIG,
     )
+    from agents.gnn import (  # noqa: F401
+        GNN_CFG,
+        GNN_DEFAULT_CONFIG,
+        GNNAgent,
+        GraphConvolution,
+        GraphRegressionGCN,
+        normalized_chain_adjacency,
+    )
     from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from agents.privileged_autoencoder import (  # noqa: F401
+        PAE_CFG,
+        PAE_DEFAULT_CONFIG,
+        PrivilegedAutoencoder,
+        PrivilegedAutoencoderAgent,
+    )
     from agents.variational_autoencoder import (  # noqa: F401
         Decoder,
         Encoder,
@@ -51,8 +65,17 @@ _EXPORT_MODULES = {
     "DRLR_CFG": "agents.drlr_sac",
     "DRLR_DEFAULT_CONFIG": "agents.drlr_sac",
     "EMAModel": "agents.diffusion_policy_state",
+    "GNN_CFG": "agents.gnn",
+    "GNN_DEFAULT_CONFIG": "agents.gnn",
+    "GNNAgent": "agents.gnn",
+    "GraphConvolution": "agents.gnn",
+    "GraphRegressionGCN": "agents.gnn",
     "IBRL": "agents.ibrl_sac",
     "IBRL_SAC_CFG": "agents.ibrl_sac",
+    "PAE_CFG": "agents.privileged_autoencoder",
+    "PAE_DEFAULT_CONFIG": "agents.privileged_autoencoder",
+    "PrivilegedAutoencoder": "agents.privileged_autoencoder",
+    "PrivilegedAutoencoderAgent": "agents.privileged_autoencoder",
     "VAE_CFG": "agents.variational_autoencoder",
     "VAE_STATE_CFG": "agents.variational_autoencoder",
     "VAE_VISION_CFG": "agents.variational_autoencoder",
@@ -65,6 +88,7 @@ _EXPORT_MODULES = {
     "VariationalAutoencoderVision": "agents.variational_autoencoder",
     "VariationalAutoencoderVisionAgent": "agents.variational_autoencoder",
     "VISION_DP_CFG": "agents.diffusion_policy_vision",
+    "normalized_chain_adjacency": "agents.gnn",
 }
 
 __all__ = sorted(_EXPORT_MODULES)
