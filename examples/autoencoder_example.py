@@ -1,4 +1,4 @@
-"""Train a privileged-state autoencoder on a synthetic state dataset."""
+"""Train a deterministic autoencoder on a synthetic state dataset."""
 
 from __future__ import annotations
 
@@ -13,37 +13,37 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from mjxsim import SupervisedTrainer
-from mjxsim.agents import PrivilegedAutoencoderAgent
+from mjxsim.agents import AutoencoderAgent
 
 
-def make_privileged_dataset(
+def make_state_dataset(
     *,
     num_samples: int = 512,
-    privileged_dim: int = 12,
+    state_dim: int = 12,
 ) -> TensorDataset:
-    base = torch.randn(num_samples, privileged_dim)
-    privileged = torch.empty_like(base)
-    privileged[:, 0::3] = base[:, 0::3]
-    privileged[:, 1::3] = torch.sin(base[:, 1::3])
-    privileged[:, 2::3] = base[:, 2::3].square()
-    return TensorDataset(privileged, privileged)
+    base = torch.randn(num_samples, state_dim)
+    states = torch.empty_like(base)
+    states[:, 0::3] = base[:, 0::3]
+    states[:, 1::3] = torch.sin(base[:, 1::3])
+    states[:, 2::3] = base[:, 2::3].square()
+    return TensorDataset(states, states)
 
 
 def main() -> None:
     torch.manual_seed(0)
-    privileged_dim = 12
-    dataset = make_privileged_dataset(privileged_dim=privileged_dim)
+    state_dim = 12
+    dataset = make_state_dataset(state_dim=state_dim)
     train_dataset, valid_dataset = random_split(dataset, [448, 64])
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
     valid_loader = DataLoader(valid_dataset, batch_size=64)
 
-    agent = PrivilegedAutoencoderAgent(
+    agent = AutoencoderAgent(
         {
-            "privileged_dim": privileged_dim,
+            "state_dim": state_dim,
             "latent_dim": 4,
             "hidden_dims": [64, 32],
             "learning_rate": 1e-3,
-            "checkpoint_path": "runs/privileged_autoencoder.pt",
+            "checkpoint_path": "runs/autoencoder.pt",
         }
     )
 

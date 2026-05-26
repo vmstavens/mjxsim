@@ -32,11 +32,16 @@ if TYPE_CHECKING:
         normalized_chain_adjacency,
     )
     from agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
-    from agents.privileged_autoencoder import (  # noqa: F401
-        PAE_CFG,
-        PAE_DEFAULT_CONFIG,
-        PrivilegedAutoencoder,
-        PrivilegedAutoencoderAgent,
+    from agents.autoencoder import (  # noqa: F401
+        AE_CFG,
+        AE_DEFAULT_CONFIG,
+        Autoencoder,
+        AutoencoderAgent,
+    )
+    from agents.latent_distiller import (  # noqa: F401
+        LATENT_DISTILLER_CFG,
+        LATENT_DISTILLER_DEFAULT_CONFIG,
+        LatentDistillerAgent,
     )
     from agents.variational_autoencoder import (  # noqa: F401
         Decoder,
@@ -53,7 +58,11 @@ if TYPE_CHECKING:
     )
 
 _EXPORT_MODULES = {
+    "AE_CFG": "agents.autoencoder",
+    "AE_DEFAULT_CONFIG": "agents.autoencoder",
     "Agent": "agents.ibrl_base_agent",
+    "Autoencoder": "agents.autoencoder",
+    "AutoencoderAgent": "agents.autoencoder",
     "ConditionalUnet1D": "agents.diffusion_policy_state",
     "DP_CFG": "agents.diffusion_policy_state",
     "DiffusionPolicy": "agents.diffusion_policy_state",
@@ -72,10 +81,9 @@ _EXPORT_MODULES = {
     "GraphRegressionGCN": "agents.gnn",
     "IBRL": "agents.ibrl_sac",
     "IBRL_SAC_CFG": "agents.ibrl_sac",
-    "PAE_CFG": "agents.privileged_autoencoder",
-    "PAE_DEFAULT_CONFIG": "agents.privileged_autoencoder",
-    "PrivilegedAutoencoder": "agents.privileged_autoencoder",
-    "PrivilegedAutoencoderAgent": "agents.privileged_autoencoder",
+    "LATENT_DISTILLER_CFG": "agents.latent_distiller",
+    "LATENT_DISTILLER_DEFAULT_CONFIG": "agents.latent_distiller",
+    "LatentDistillerAgent": "agents.latent_distiller",
     "VAE_CFG": "agents.variational_autoencoder",
     "VAE_STATE_CFG": "agents.variational_autoencoder",
     "VAE_VISION_CFG": "agents.variational_autoencoder",

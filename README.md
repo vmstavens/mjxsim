@@ -50,10 +50,34 @@ from mjxsim.utils.datasets import split_dataset
 
 ## Package contents
 - `envs`: MuJoCo/Brax and Gym wrappers (MuJoCo/Brax require the `mujoco` extra).
-- `agents`: IBRL, PPO, BC, diffusion-policy agents built on SKRL.
+- `agents`: IBRL, PPO, BC, diffusion-policy, representation-learning, and
+  latent-distillation agents built on SKRL/PyTorch.
 - `datasets`: Dataset utilities (PushT, attractor, state-only datasets).
 - `utils`: Helpers for env creation, dataset splitting, and data handling.
 - `cli`: Console entrypoints for training/evaluation.
+
+## Representation agents
+- `AutoencoderAgent` trains a deterministic MLP encoder/decoder on vector
+  states with `SupervisedTrainer`.
+- `VariationalAutoencoderStateAgent` and `VariationalAutoencoderVisionAgent`
+  train VAE representations for vector states and images.
+- `LatentDistillerAgent` implements privileged latent distillation: a trainable
+  deployment encoder receives sensor observations while a frozen privileged
+  encoder receives privileged observations, and the supervised loss matches
+  their latent representations. Either encoder can be deterministic or
+  variational; VAE encoders use their latent mean as the distillation target.
+
+```python
+from mjxsim.agents import AutoencoderAgent, LatentDistillerAgent
+
+student = AutoencoderAgent({"state_dim": 16, "latent_dim": 8})
+teacher = AutoencoderAgent({"state_dim": 24, "latent_dim": 8})
+
+distiller = LatentDistillerAgent(
+    encoder=student.model,
+    privileged_encoder=teacher.model,
+)
+```
 
 ## Notes
 - Optional modules such as `mujoco_playground`, `robots`, or `ctrl` are not bundled; they are used only by experimental files and can be installed separately if needed.

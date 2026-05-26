@@ -37,11 +37,16 @@ if TYPE_CHECKING:
     )
     from mjxsim.agents.ibrl_base_agent import Agent  # noqa: F401
     from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
-    from mjxsim.agents.privileged_autoencoder import (  # noqa: F401
-        PAE_CFG,
-        PAE_DEFAULT_CONFIG,
-        PrivilegedAutoencoder,
-        PrivilegedAutoencoderAgent,
+    from mjxsim.agents.autoencoder import (  # noqa: F401
+        AE_CFG,
+        AE_DEFAULT_CONFIG,
+        Autoencoder,
+        AutoencoderAgent,
+    )
+    from mjxsim.agents.latent_distiller import (  # noqa: F401
+        LATENT_DISTILLER_CFG,
+        LATENT_DISTILLER_DEFAULT_CONFIG,
+        LatentDistillerAgent,
     )
     from mjxsim.agents.variational_autoencoder import (  # noqa: F401
         VAE_CFG,
@@ -96,7 +101,11 @@ _SUBMODULE_EXPORTS = [
 ]
 
 _AGENT_EXPORTS = [
+    "AE_CFG",
+    "AE_DEFAULT_CONFIG",
     "Agent",
+    "Autoencoder",
+    "AutoencoderAgent",
     "ConditionalUnet1D",
     "DP_CFG",
     "DiffusionPolicy",
@@ -115,10 +124,9 @@ _AGENT_EXPORTS = [
     "GraphRegressionGCN",
     "IBRL",
     "IBRL_SAC_CFG",
-    "PAE_CFG",
-    "PAE_DEFAULT_CONFIG",
-    "PrivilegedAutoencoder",
-    "PrivilegedAutoencoderAgent",
+    "LATENT_DISTILLER_CFG",
+    "LATENT_DISTILLER_DEFAULT_CONFIG",
+    "LatentDistillerAgent",
     "VAE_CFG",
     "VAE_STATE_CFG",
     "VAE_VISION_CFG",
@@ -170,7 +178,11 @@ _EXPORT_MODULES = {
     "models": "mjxsim.models",
     "trainers": "mjxsim.trainers",
     "utils": "mjxsim.utils",
+    "AE_CFG": "mjxsim.agents.autoencoder",
+    "AE_DEFAULT_CONFIG": "mjxsim.agents.autoencoder",
     "Agent": "mjxsim.agents.ibrl_base_agent",
+    "Autoencoder": "mjxsim.agents.autoencoder",
+    "AutoencoderAgent": "mjxsim.agents.autoencoder",
     "ConditionalUnet1D": "mjxsim.agents.diffusion_policy_state",
     "DP_CFG": "mjxsim.agents.diffusion_policy_state",
     "DiffusionPolicy": "mjxsim.agents.diffusion_policy_state",
@@ -189,10 +201,9 @@ _EXPORT_MODULES = {
     "GraphRegressionGCN": "mjxsim.agents.gnn",
     "IBRL": "mjxsim.agents.ibrl_sac",
     "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
-    "PAE_CFG": "mjxsim.agents.privileged_autoencoder",
-    "PAE_DEFAULT_CONFIG": "mjxsim.agents.privileged_autoencoder",
-    "PrivilegedAutoencoder": "mjxsim.agents.privileged_autoencoder",
-    "PrivilegedAutoencoderAgent": "mjxsim.agents.privileged_autoencoder",
+    "LATENT_DISTILLER_CFG": "mjxsim.agents.latent_distiller",
+    "LATENT_DISTILLER_DEFAULT_CONFIG": "mjxsim.agents.latent_distiller",
+    "LatentDistillerAgent": "mjxsim.agents.latent_distiller",
     "VAE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_STATE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_VISION_CFG": "mjxsim.agents.variational_autoencoder",
@@ -233,14 +244,15 @@ _EXPORT_MODULES = {
 }
 
 _OPTIONAL_DEPENDENCIES = {
+    "Autoencoder": "torch",
+    "AutoencoderAgent": "torch",
     "DiffusionPolicy": "torch",
     "DiffusionPolicyVision": "torch",
     "DRLR": "skrl",
     "DRLR2": "skrl",
     "GNNAgent": "torch",
     "IBRL": "skrl",
-    "PrivilegedAutoencoder": "torch",
-    "PrivilegedAutoencoderAgent": "torch",
+    "LatentDistillerAgent": "torch",
     "VariationalAutoencoder": "torch",
     "VariationalAutoencoderAgent": "skrl",
     "VariationalAutoencoderState": "torch",

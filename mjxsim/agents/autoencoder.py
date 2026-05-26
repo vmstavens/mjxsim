@@ -1,4 +1,4 @@
-"""Privileged-state autoencoder compatible with ``SupervisedTrainer``."""
+"""State autoencoder agents compatible with ``SupervisedTrainer``."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from torch import nn
 
 
 @dataclasses.dataclass(kw_only=True)
-class PAE_CFG:
-    """Configuration for privileged-state autoencoding."""
+class AE_CFG:
+    """Configuration for deterministic state autoencoding."""
 
-    privileged_dim: int = 16
+    state_dim: int = 16
     latent_dim: int = 8
     hidden_dims: list[int] = dataclasses.field(default_factory=lambda: [128, 64])
     learning_rate: float = 1e-3
@@ -38,6 +38,10 @@ class PAE_CFG:
     def expand(self) -> None:
         if isinstance(self.experiment, dict):
             self.experiment = ExperimentCfg(**self.experiment)
+        if self.state_dim <= 0:
+            raise ValueError("state_dim must be a positive integer")
+        if self.latent_dim <= 0:
+            raise ValueError("latent_dim must be a positive integer")
 
     def to_dict(self) -> dict[str, Any]:
         self.expand()
@@ -53,23 +57,23 @@ class PAE_CFG:
         return getattr(self, key)
 
 
-PAE_DEFAULT_CONFIG = PAE_CFG()
+AE_DEFAULT_CONFIG = AE_CFG()
 
 
-def _coerce_cfg(cfg: PAE_CFG | Mapping[str, Any] | None) -> PAE_CFG:
+def _coerce_cfg(cfg: AE_CFG | Mapping[str, Any] | None) -> AE_CFG:
     if cfg is None:
-        result = PAE_CFG()
-    elif isinstance(cfg, PAE_CFG):
+        result = AE_CFG()
+    elif isinstance(cfg, AE_CFG):
         result = copy.deepcopy(cfg)
     elif isinstance(cfg, Mapping):
-        result = PAE_CFG()
+        result = AE_CFG()
         for key, value in cfg.items():
             if not hasattr(result, key):
-                raise ValueError(f"Invalid privileged autoencoder config key: {key}")
+                raise ValueError(f"Invalid autoencoder config key: {key}")
             setattr(result, key, copy.deepcopy(value))
     else:
         raise TypeError(
-            "cfg must be a PAE_CFG, mapping, or None "
+            "cfg must be an AE_CFG, mapping, or None "
             f"(got {type(cfg).__name__})"
         )
     result.expand()
@@ -94,50 +98,52 @@ def _make_mlp(sizes: list[int], *, final_activation: bool = False) -> nn.Sequent
     return nn.Sequential(*layers)
 
 
-class PrivilegedAutoencoder(nn.Module):
-    """MLP autoencoder for compact privileged-state embeddings."""
+class Autoencoder(nn.Module):
+    """MLP autoencoder for compact vector-state embeddings."""
 
     def __init__(
         self,
         *,
-        privileged_dim: int,
+        state_dim: int,
         latent_dim: int,
         hidden_dims: list[int] | tuple[int, ...] = (128, 64),
     ):
         super().__init__()
-        if privileged_dim < 1:
-            raise ValueError("privileged_dim must be positive")
+        if state_dim < 1:
+            raise ValueError("state_dim must be positive")
         if latent_dim < 1:
             raise ValueError("latent_dim must be positive")
         hidden = list(hidden_dims)
-        self.encoder = _make_mlp([privileged_dim, *hidden, latent_dim])
-        self.decoder = _make_mlp([latent_dim, *reversed(hidden), privileged_dim])
+        self.encoder = _make_mlp([state_dim, *hidden, latent_dim])
+        self.decoder = _make_mlp([latent_dim, *reversed(hidden), state_dim])
 
-    def encode(self, privileged: torch.Tensor) -> torch.Tensor:
-        return self.encoder(privileged)
+    def encode(self, states: torch.Tensor) -> torch.Tensor:
+        return self.encoder(states)
 
     def decode(self, latent: torch.Tensor) -> torch.Tensor:
         return self.decoder(latent)
 
-    def forward(self, privileged: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        latent = self.encode(privileged)
+    def forward(self, states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        latent = self.encode(states)
         reconstruction = self.decode(latent)
         return reconstruction, latent
 
 
-class PrivilegedAutoencoderAgent:
-    """SupervisedTrainer adapter for privileged-state autoencoding."""
+class AutoencoderAgent:
+    """SupervisedTrainer adapter for deterministic state autoencoding."""
+
+    input_keys = ("states", "state", "obs", "observations", "x")
 
     def __init__(
         self,
-        cfg: PAE_CFG | Mapping[str, Any] | None = None,
+        cfg: AE_CFG | Mapping[str, Any] | None = None,
         *,
         device: str | torch.device | None = None,
     ):
         self.cfg = _coerce_cfg(cfg)
         self.device = _resolve_device(device)
-        self.model = PrivilegedAutoencoder(
-            privileged_dim=self.cfg.privileged_dim,
+        self.model = Autoencoder(
+            state_dim=self.cfg.state_dim,
             latent_dim=self.cfg.latent_dim,
             hidden_dims=self.cfg.hidden_dims,
         ).to(self.device)
@@ -187,34 +193,36 @@ class PrivilegedAutoencoderAgent:
         self.model.eval()
 
     @torch.no_grad()
-    def encode(self, privileged: torch.Tensor) -> torch.Tensor:
+    def encode(self, states: torch.Tensor | Mapping[str, torch.Tensor]) -> torch.Tensor:
         was_training = self.model.training
         self.model.eval()
-        latent = self.model.encode(privileged.to(self.device, dtype=torch.float32))
+        latent = self.model.encode(self._get_state_tensor(states, None))
         if was_training:
             self.model.train()
         return latent
 
     @torch.no_grad()
-    def reconstruct(self, privileged: torch.Tensor) -> torch.Tensor:
+    def reconstruct(
+        self, states: torch.Tensor | Mapping[str, torch.Tensor]
+    ) -> torch.Tensor:
         was_training = self.model.training
         self.model.eval()
-        reconstruction, _ = self.model(privileged.to(self.device, dtype=torch.float32))
+        reconstruction, _ = self.model(self._get_state_tensor(states, None))
         if was_training:
             self.model.train()
         return reconstruction
 
-    def act(self, privileged: torch.Tensor) -> torch.Tensor:
-        return self.encode(privileged)
+    def act(self, states: torch.Tensor | Mapping[str, torch.Tensor]) -> torch.Tensor:
+        return self.encode(states)
 
     def _update(
         self,
         inputs: torch.Tensor | Mapping[str, torch.Tensor],
         targets: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        privileged = self._get_privileged_tensor(inputs, targets)
-        reconstruction, _ = self.model(privileged)
-        loss = self.loss_fn(reconstruction, privileged)
+        states = self._get_state_tensor(inputs, targets)
+        reconstruction, _ = self.model(states)
+        loss = self.loss_fn(reconstruction, states)
 
         if self.training and torch.is_grad_enabled():
             self.optimizer.zero_grad(set_to_none=True)
@@ -223,36 +231,28 @@ class PrivilegedAutoencoderAgent:
 
         return loss
 
-    def _get_privileged_tensor(
+    def _get_state_tensor(
         self,
         inputs: torch.Tensor | Mapping[str, torch.Tensor],
         targets: torch.Tensor | None,
     ) -> torch.Tensor:
         if isinstance(inputs, Mapping):
             value = None
-            for key in (
-                "privileged",
-                "privileged_states",
-                "privileged_obs",
-                "states",
-                "obs",
-            ):
+            for key in self.input_keys:
                 if key in inputs:
                     value = inputs[key]
                     break
             if value is None:
-                raise KeyError(
-                    "Expected one of privileged, privileged_states, "
-                    "privileged_obs, states, or obs in batch"
-                )
-            privileged = value
+                joined = ", ".join(self.input_keys)
+                raise KeyError(f"Expected one of [{joined}] in autoencoder batch")
+            states = value
         else:
-            privileged = targets if targets is not None else inputs
+            states = targets if targets is not None else inputs
 
-        privileged = privileged.to(self.device, dtype=torch.float32)
-        if privileged.ndim == 1:
-            privileged = privileged.unsqueeze(0)
-        return privileged
+        states = states.to(self.device, dtype=torch.float32)
+        if states.ndim == 1:
+            states = states.unsqueeze(0)
+        return states
 
     def state_dict(self) -> dict[str, Any]:
         return {
@@ -281,7 +281,7 @@ class PrivilegedAutoencoderAgent:
         path: str | Path,
         *,
         device: str | torch.device | None = None,
-    ) -> PrivilegedAutoencoderAgent:
+    ) -> AutoencoderAgent:
         checkpoint = torch.load(path, map_location=_resolve_device(device))
         agent = cls(checkpoint["cfg"], device=device)
         agent.model.load_state_dict(checkpoint["model_state_dict"])

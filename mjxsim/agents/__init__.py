@@ -32,11 +32,16 @@ if TYPE_CHECKING:
         normalized_chain_adjacency,
     )
     from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
-    from mjxsim.agents.privileged_autoencoder import (  # noqa: F401
-        PAE_CFG,
-        PAE_DEFAULT_CONFIG,
-        PrivilegedAutoencoder,
-        PrivilegedAutoencoderAgent,
+    from mjxsim.agents.autoencoder import (  # noqa: F401
+        AE_CFG,
+        AE_DEFAULT_CONFIG,
+        Autoencoder,
+        AutoencoderAgent,
+    )
+    from mjxsim.agents.latent_distiller import (  # noqa: F401
+        LATENT_DISTILLER_CFG,
+        LATENT_DISTILLER_DEFAULT_CONFIG,
+        LatentDistillerAgent,
     )
     from mjxsim.agents.variational_autoencoder import (  # noqa: F401
         Decoder,
@@ -53,7 +58,11 @@ if TYPE_CHECKING:
     )
 
 _EXPORT_MODULES = {
+    "AE_CFG": "mjxsim.agents.autoencoder",
+    "AE_DEFAULT_CONFIG": "mjxsim.agents.autoencoder",
     "Agent": "mjxsim.agents.ibrl_base_agent",
+    "Autoencoder": "mjxsim.agents.autoencoder",
+    "AutoencoderAgent": "mjxsim.agents.autoencoder",
     "ConditionalUnet1D": "mjxsim.agents.diffusion_policy_state",
     "DP_CFG": "mjxsim.agents.diffusion_policy_state",
     "DiffusionPolicy": "mjxsim.agents.diffusion_policy_state",
@@ -72,10 +81,9 @@ _EXPORT_MODULES = {
     "GraphRegressionGCN": "mjxsim.agents.gnn",
     "IBRL": "mjxsim.agents.ibrl_sac",
     "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
-    "PAE_CFG": "mjxsim.agents.privileged_autoencoder",
-    "PAE_DEFAULT_CONFIG": "mjxsim.agents.privileged_autoencoder",
-    "PrivilegedAutoencoder": "mjxsim.agents.privileged_autoencoder",
-    "PrivilegedAutoencoderAgent": "mjxsim.agents.privileged_autoencoder",
+    "LATENT_DISTILLER_CFG": "mjxsim.agents.latent_distiller",
+    "LATENT_DISTILLER_DEFAULT_CONFIG": "mjxsim.agents.latent_distiller",
+    "LatentDistillerAgent": "mjxsim.agents.latent_distiller",
     "VAE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_STATE_CFG": "mjxsim.agents.variational_autoencoder",
     "VAE_VISION_CFG": "mjxsim.agents.variational_autoencoder",
