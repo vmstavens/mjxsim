@@ -5,18 +5,18 @@ from pathlib import Path
 import torch
 from matplotlib import pyplot as plt
 
-from agents.diffusion_policy_state import (
+from mjxsim.agents.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
     ConditionalUnet1D,
     DiffusionPolicy,
     EMAModel,
 )
-from examples.datasets.pushert import PushTStateDataset, download_dataset
-from trainers.supervised_trainer import (
+from mjxsim.datasets.pushert import PushTStateDataset, download_dataset
+from mjxsim.trainers.supervised_trainer import (
     SUPERVISED_TRAINER_DEFAULT_CONFIG,
     SupervisedTrainer,
 )
-from utils import demo as loc_demo
+from mjxsim.utils import demo as loc_demo
 
 logging.basicConfig(level=logging.WARN)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory

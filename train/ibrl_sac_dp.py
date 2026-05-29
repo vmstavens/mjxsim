@@ -12,12 +12,12 @@ from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 
-import agents.diffusion_policy_state as dp
-from agents.diffusion_policy_state import DiffusionPolicy
-from agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
-from agents.models import ibrl_sac as ibrl
-from envs.brax.ur10e import UR10e
-from utils.datasets import DataHandler, folder_to_memory
+import mjxsim.agents.diffusion_policy_state as dp
+from mjxsim.agents.diffusion_policy_state import DiffusionPolicy
+from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
+from mjxsim.agents.models import ibrl_sac as ibrl
+from mjxsim.envs.brax.ur10e import UR10e
+from mjxsim.utils.datasets import DataHandler, folder_to_memory
 
 logging.basicConfig(level=logging.WARN)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory

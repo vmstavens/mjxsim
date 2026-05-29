@@ -18,14 +18,12 @@ from skrl.agents.torch import Agent
 from skrl.agents.torch.base import ExperimentCfg
 from torch.utils.data import DataLoader
 
-from agents.diffusion_policy_state import (
+from mjxsim.agents.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
     ConditionalUnet1D,
     DiffusionPolicy,
     EMAModel,
 )
-from examples.datasets.pushert import PushTStateDataset, download_dataset
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -238,6 +236,8 @@ def train_diffusion_policy_pushert(
     epochs: int = 50, batch_size: int = 256, eval_frequency: int = 10
 ) -> DiffusionPolicy:
     """Train diffusion policy on PushT state dataset and perform rollouts."""
+    from mjxsim.datasets.pushert import PushTStateDataset, download_dataset
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     env = PushTEnv()

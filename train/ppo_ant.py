@@ -17,7 +17,7 @@ from skrl.resources.schedulers.torch import KLAdaptiveLR
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 
-from utils.envs import ENV_TYPE, mk_env
+from mjxsim.utils.envs import ENV_TYPE, mk_env
 
 # set the seed for reproducibility
 set_seed(27)

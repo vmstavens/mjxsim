@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from utils.datasets import load_data_files
+from mjxsim.utils.datasets import load_data_files
 
 
 def create_sample_indices(
@@ -46,7 +46,7 @@ def create_sample_indices(
     return indices
 
 
-# from utils.dpy.utils.demo import (
+# from mjxsim.utils.dpy.utils.demo import (
 #     create_sample_indices,
 #     get_data_stats,
 #     normalize_data,

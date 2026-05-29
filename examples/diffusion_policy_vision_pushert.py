@@ -12,9 +12,9 @@ import torch
 import zarr
 from torch.utils.data import DataLoader, Dataset
 
-from agents.diffusion_policy_vision import VISION_DP_CFG, DiffusionPolicyVision
-from envs.pushert import PushTEnv
-from examples.datasets.pushert import (
+from mjxsim.agents.diffusion_policy_vision import VISION_DP_CFG, DiffusionPolicyVision
+from mjxsim.envs.pushert import PushTEnv
+from mjxsim.datasets.pushert import (
     create_sample_indices,
     download_dataset,
     get_data_stats,
@@ -22,7 +22,7 @@ from examples.datasets.pushert import (
     sample_sequence,
     save_video,
 )
-from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
+from mjxsim.trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

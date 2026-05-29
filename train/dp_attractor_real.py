@@ -6,11 +6,11 @@ from pathlib import Path
 import torch
 from matplotlib import pyplot as plt
 
-import agents.diffusion_policy_state as dp
-from agents.diffusion_policy_state import DiffusionPolicy
-from datasets.attractor import AttractorTrajectoryDataset
-from datasets.demonstration import DemonstrationDataset
-from trainers.supervised_trainer import (
+import mjxsim.agents.diffusion_policy_state as dp
+from mjxsim.agents.diffusion_policy_state import DiffusionPolicy
+from mjxsim.datasets.attractor import AttractorTrajectoryDataset
+from mjxsim.datasets.demonstration import DemonstrationDataset
+from mjxsim.trainers.supervised_trainer import (
     SUPERVISED_TRAINER_DEFAULT_CONFIG,
     SupervisedTrainer,
 )

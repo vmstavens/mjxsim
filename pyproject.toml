@@ -119,16 +119,18 @@ rl = ["skrl>=2.0.0", "torch"]
 stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
-packages = [
-    "mjxsim",
-    "agents",
-    "datasets",
-    "envs",
-    "examples",
-    "trainers",
-    "utils",
+packages = ["mjxsim"]
+exclude = [
+    "/mjxsim/datasets",
+    "/mjxsim/envs",
 ]
 artifacts = ["mjxsim/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/mjxsim/datasets",
+    "/mjxsim/envs",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true

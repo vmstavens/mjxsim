@@ -8,15 +8,15 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from agents.diffusion_policy_state import (
+from mjxsim.agents.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
     ConditionalUnet1D,
     DiffusionPolicy,
     EMAModel,
 )
-from datasets.attractor import AttractorTrajectoryDataset
-from datasets.demonstration import DemonstrationDataset
-from trainers.supervised_trainer import (
+from mjxsim.datasets.attractor import AttractorTrajectoryDataset
+from mjxsim.datasets.demonstration import DemonstrationDataset
+from mjxsim.trainers.supervised_trainer import (
     SUPERVISED_TRAINER_DEFAULT_CONFIG,
     SupervisedTrainer,
 )

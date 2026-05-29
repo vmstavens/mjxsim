@@ -18,7 +18,7 @@ from ml_collections import config_dict
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from utils.mjx import ObjType, get_pose, is_stable
+from mjxsim.utils.mjx import ObjType, get_pose
 
 
 def _ensure_warp_internal_module() -> None:

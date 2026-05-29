@@ -26,9 +26,9 @@ from matplotlib import pyplot as plt
 from skrl.agents.torch.base import ExperimentCfg
 from torch.utils.data import DataLoader
 
-from examples.datasets.pushert import PushTStateDataset, download_dataset
-from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
-from utils.datasets import split_dataset
+from mjxsim.datasets.pushert import PushTStateDataset, download_dataset
+from mjxsim.trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
+from mjxsim.utils.datasets import split_dataset
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

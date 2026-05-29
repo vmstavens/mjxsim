@@ -59,17 +59,6 @@ if TYPE_CHECKING:
         VariationalAutoencoderVision,
         VariationalAutoencoderVisionAgent,
     )
-    from datasets.attractor import AttractorTrajectoryDataset  # noqa: F401
-    from datasets.demonstration import DemonstrationDataset  # noqa: F401
-    from datasets.state import StateDataset  # noqa: F401
-    from datasets.vision import ImageStateDataset  # noqa: F401
-    from envs.mocap_control import MocapReach  # noqa: F401
-    from envs.pipe_insert_2 import PipeInsert2  # noqa: F401
-    from envs.pushert import PushTEnv  # noqa: F401
-    from examples.datasets.pushert import (  # noqa: F401
-        PushTStateDataset,
-        download_dataset,
-    )
     from mjxsim.trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
     from mjxsim.trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
     from mjxsim.utils.datahandler import DataHandler  # noqa: F401
@@ -93,8 +82,6 @@ if TYPE_CHECKING:
 
 _SUBMODULE_EXPORTS = [
     "agents",
-    "datasets",
-    "envs",
     "models",
     "trainers",
     "utils",
@@ -140,17 +127,6 @@ _AGENT_EXPORTS = [
     "normalized_chain_adjacency",
 ]
 
-_DATASET_EXPORTS = [
-    "AttractorTrajectoryDataset",
-    "DemonstrationDataset",
-    "ImageStateDataset",
-    "PushTStateDataset",
-    "StateDataset",
-    "download_dataset",
-]
-
-_ENV_EXPORTS = ["MocapReach", "PipeInsert2", "PushTEnv"]
-
 _TRAINER_EXPORTS = ["SequentialTrainerPlus", "SupervisedTrainer"]
 
 _UTIL_EXPORTS = [
@@ -173,8 +149,6 @@ _UTIL_EXPORTS = [
 
 _EXPORT_MODULES = {
     "agents": "mjxsim.agents",
-    "datasets": "mjxsim.datasets",
-    "envs": "mjxsim.envs",
     "models": "mjxsim.models",
     "trainers": "mjxsim.trainers",
     "utils": "mjxsim.utils",
@@ -215,15 +189,6 @@ _EXPORT_MODULES = {
     "VariationalAutoencoderVisionAgent": "mjxsim.agents.variational_autoencoder",
     "VISION_DP_CFG": "mjxsim.agents.diffusion_policy_vision",
     "normalized_chain_adjacency": "mjxsim.agents.gnn",
-    "AttractorTrajectoryDataset": "datasets.attractor",
-    "DemonstrationDataset": "datasets.demonstration",
-    "ImageStateDataset": "datasets.vision",
-    "PushTStateDataset": "datasets.pushert",
-    "StateDataset": "datasets.state",
-    "download_dataset": "datasets.pushert",
-    "MocapReach": "envs.mocap_control",
-    "PipeInsert2": "envs.pipe_insert_2",
-    "PushTEnv": "envs.pushert",
     "SequentialTrainerPlus": "mjxsim.trainers.sequential_trainer_plus",
     "SupervisedTrainer": "mjxsim.trainers.supervised_trainer",
     "DataHandler": "mjxsim.utils.datahandler",
@@ -259,9 +224,6 @@ _OPTIONAL_DEPENDENCIES = {
     "VariationalAutoencoderStateAgent": "skrl",
     "VariationalAutoencoderVision": "torch",
     "VariationalAutoencoderVisionAgent": "skrl",
-    "MocapReach": "mujoco",
-    "PipeInsert2": "mujoco",
-    "PushTEnv": "gym",
     "get_memory": "skrl",
     "override_action_space": "gymnasium",
     "SequentialTrainerPlus": "skrl",
@@ -305,8 +267,6 @@ __all__ = [
     "__version__",
     *_SUBMODULE_EXPORTS,
     *_AGENT_EXPORTS,
-    *_DATASET_EXPORTS,
-    *_ENV_EXPORTS,
     *_TRAINER_EXPORTS,
     *_UTIL_EXPORTS,
 ]

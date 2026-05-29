@@ -6,19 +6,19 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
-from agents.models import ibrl_sac as ibrl
+from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_DEFAULT_CONFIG
+from mjxsim.agents.models import ibrl_sac as ibrl
 from gym_pusht.envs import PushTEnv
 from gymnasium.vector import SyncVectorEnv
 from skrl.envs.wrappers.torch import wrap_env
 from skrl.memories.torch import RandomMemory
 from skrl.utils import set_seed
-from trainers.sequential_trainer_plus import SequentialTrainerPlus
+from mjxsim.trainers.sequential_trainer_plus import SequentialTrainerPlus
 
-import agents.diffusion_policy_state as dp
-from agents.diffusion_policy_state import DiffusionPolicy
-from examples.datasets.pushert import PushTStateDataset
-from utils import demo
+import mjxsim.agents.diffusion_policy_state as dp
+from mjxsim.agents.diffusion_policy_state import DiffusionPolicy
+from mjxsim.datasets.pushert import PushTStateDataset
+from mjxsim.utils import demo
 
 logging.basicConfig(level=logging.WARN)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory

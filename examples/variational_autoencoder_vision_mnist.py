@@ -9,11 +9,11 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from agents.variational_autoencoder import (
+from mjxsim.agents.variational_autoencoder import (
     VAE_VISION_CFG,
     VariationalAutoencoderVisionAgent,
 )
-from trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
+from mjxsim.trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
