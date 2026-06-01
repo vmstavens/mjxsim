@@ -203,7 +203,9 @@ class SequentialTrainerPlus(Trainer):
 
     @staticmethod
     def _set_agent_mode(agent, mode: str) -> None:
-        if hasattr(agent, "set_running_mode"):
+        if hasattr(agent, "set_mode"):
+            agent.set_mode(mode)
+        elif hasattr(agent, "set_running_mode"):
             agent.set_running_mode(mode)
         elif hasattr(agent, "enable_training_mode"):
             agent.enable_training_mode(mode == "train")
@@ -610,7 +612,6 @@ class SequentialTrainerPlus(Trainer):
         # print("setting ibrl to eval")
 
         self._set_agent_mode(self.agents, "eval")
-        self.agents.set_mode("eval")
 
         # if hasattr(self.agents, "IL_policy") and hasattr(self.agents.IL_policy, "eval"):
         #     self.agents.IL_policy.eval()
@@ -709,7 +710,6 @@ class SequentialTrainerPlus(Trainer):
         finally:
             self._restore_agent_logging(logging_state)
 
-        self.agents.set_mode("train")
         self._set_agent_mode(self.agents, "train")
         if orig_learning_starts is not None:
             self.agents._learning_starts = orig_learning_starts
