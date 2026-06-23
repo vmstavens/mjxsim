@@ -12,6 +12,6 @@ This package contains the available agent implementations.
 | Variational Autoencoder (State) | `VariationalAutoencoderStateAgent` | `VAE_STATE_CFG` | Supervised state representation agent | [`variational_autoencoder.py`](variational_autoencoder.py) | - |
 | Variational Autoencoder (Vision) | `VariationalAutoencoderVisionAgent` | `VAE_VISION_CFG` | Supervised image representation agent | [`variational_autoencoder.py`](variational_autoencoder.py) | [`../examples/variational_autoencoder_vision_mnist.py`](../examples/variational_autoencoder_vision_mnist.py) |
 | Latent Distiller | `LatentDistillerAgent` | `LATENT_DISTILLER_CFG` | Supervised privileged latent distillation agent | [`latent_distiller.py`](latent_distiller.py) | - |
-| DRLR | `DRLR` | `DRLR_CFG` | Reinforcement learning agent | [`drlr_sac.py`](drlr_sac.py) | - |
+| DRLR | `DRLR` | `DRLR_SAC_CFG` | Reinforcement learning agent | [`drlr_sac.py`](drlr_sac.py) | - |
 | DRLR2 | `DRLR2` | `DRLR2_SAC_CFG` | Reinforcement learning agent | [`drlr2_sac.py`](drlr2_sac.py) | - |
 | IBRL | `IBRL` | `IBRL_SAC_CFG` | Reinforcement learning agent with imitation/bootstrap support | [`ibrl_sac.py`](ibrl_sac.py) | - |

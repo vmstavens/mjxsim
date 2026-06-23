@@ -83,6 +83,7 @@ class DRLR2_SAC_CFG(AgentCfg):
     action_rot_low: list[float] = dataclasses.field(default_factory=list)
     a_min_lim: list[float] = dataclasses.field(default_factory=list)
     a_max_lim: list[float] = dataclasses.field(default_factory=list)
+    action_ema_alpha: float = 1.0
 
     def expand(self) -> None:
         super().expand()
@@ -240,6 +241,13 @@ class DRLR2(Agent):
 
         self._a_min_lim: list[float] = _cfg.a_min_lim
         self._a_max_lim: list[float] = _cfg.a_max_lim
+        self._action_ema_alpha: float = _cfg.action_ema_alpha
+        if not 0.0 < self._action_ema_alpha <= 1.0:
+            raise ValueError(
+                f"action_ema_alpha must be in (0, 1], got {self._action_ema_alpha}"
+            )
+        self._ema_actions: torch.Tensor | None = None
+        self._ema_action_valid: torch.Tensor | None = None
 
         self._actors = ["rl", "il", "both"]
 
@@ -356,6 +364,7 @@ class DRLR2(Agent):
         soft: bool,
         target: bool,
         timestep: int,
+        smooth_rl_action: bool = False,
     ):
         """Select an action by comparing RL and IL policies and their Q-values.
 
@@ -434,6 +443,8 @@ class DRLR2(Agent):
         else:
             self.track_data("Which / Actor", 0)
             actions = self._unnormalize_action(rl_actions)
+            if smooth_rl_action:
+                actions = self._smooth_action_ema(actions)
 
         if not target:
             self.track_data(
@@ -499,6 +510,69 @@ class DRLR2(Agent):
         self._states = states
         self._state_window_timestep = timestep
 
+    def _smooth_action_ema(self, actions: torch.Tensor) -> torch.Tensor:
+        if self._action_ema_alpha >= 1.0:
+            return actions
+
+        alpha = self._action_ema_alpha
+        if self._ema_actions is None or self._ema_actions.shape != actions.shape:
+            self._ema_actions = torch.zeros_like(actions)
+            self._ema_action_valid = torch.zeros(
+                (actions.shape[0], 1),
+                device=actions.device,
+                dtype=torch.bool,
+            )
+
+        valid = self._ema_action_valid.to(device=actions.device)
+        previous = self._ema_actions.to(device=actions.device, dtype=actions.dtype)
+        smoothed = torch.where(
+            valid,
+            alpha * actions + (1.0 - alpha) * previous,
+            actions,
+        )
+
+        self._ema_actions = smoothed.detach()
+        self._ema_action_valid = torch.ones_like(valid)
+
+        self.track_data("Action / EMA alpha", alpha)
+        self.track_data(
+            "Action / EMA delta abs mean",
+            (actions - smoothed).detach().abs().mean().item(),
+        )
+        self.track_data(
+            "Action / EMA delta abs max",
+            (actions - smoothed).detach().abs().amax().item(),
+        )
+        return smoothed
+
+    def _reset_action_ema(
+        self, terminated: torch.Tensor, truncated: torch.Tensor
+    ) -> None:
+        if self._ema_actions is None or self._ema_action_valid is None:
+            return
+
+        done = (terminated | truncated).view(-1, 1).to(
+            device=self._ema_action_valid.device,
+            dtype=torch.bool,
+        )
+        if done.shape[0] != self._ema_action_valid.shape[0]:
+            self._ema_actions = None
+            self._ema_action_valid = None
+            return
+
+        while done.ndim < self._ema_actions.ndim:
+            done = done.unsqueeze(-1)
+        self._ema_actions = torch.where(
+            done,
+            torch.zeros_like(self._ema_actions),
+            self._ema_actions,
+        )
+        self._ema_action_valid = torch.where(
+            done.view_as(self._ema_action_valid),
+            torch.zeros_like(self._ema_action_valid),
+            self._ema_action_valid,
+        )
+
     def act(
         self,
         observations: torch.Tensor,
@@ -525,9 +599,12 @@ class DRLR2(Agent):
 
         # sample random actions
         if timestep < self._random_timesteps:
-            return self.policy.random_act(
-                self._state_inputs(self._state_preprocessor(states)), role="policy"
+            actions, outputs = self._unpack_act_result(
+                self.policy.random_act(
+                    self._state_inputs(self._state_preprocessor(states)), role="policy"
+                )
             )
+            return actions, outputs
 
         if timestep < self._warmup_timesteps:
             il_states = torch.stack([self._prev_states, self._states], axis=1)
@@ -573,6 +650,7 @@ class DRLR2(Agent):
             soft=True,
             target=False,
             timestep=timestep,
+            smooth_rl_action=True,
         )
 
         return actions, output or {}
@@ -630,6 +708,24 @@ class DRLR2(Agent):
             timesteps=timesteps,
         )
 
+        if timestep == 0 and self.write_interval > 0 and self.writer is not None:
+            self.writer.add_scalar(
+                tag="Reward / Instantaneous reward (max)",
+                value=torch.max(rewards).item(),
+                timestep=0,
+            )
+            self.writer.add_scalar(
+                tag="Reward / Instantaneous reward (min)",
+                value=torch.min(rewards).item(),
+                timestep=0,
+            )
+            self.writer.add_scalar(
+                tag="Reward / Instantaneous reward (mean)",
+                value=torch.mean(rewards).item(),
+                timestep=0,
+            )
+            self.writer.flush()
+
         if timestep < self._random_timesteps + self._learning_starts - 1:
             self.expert_memory.add_samples(
                 states=states,
@@ -649,6 +745,7 @@ class DRLR2(Agent):
             terminated=terminated,
             truncated=truncated,
         )
+        self._reset_action_ema(terminated, truncated)
 
     def pre_interaction(
         self,
@@ -794,6 +891,7 @@ class DRLR2(Agent):
                         target=True,
                         timestep=timestep,
                     )
+                    next_actions = self._normalize_action(next_actions)
 
                     target_q1_values, _ = self._unpack_act_result(
                         self.target_critic_1.act(

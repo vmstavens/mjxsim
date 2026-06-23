@@ -41,8 +41,6 @@ class IBRL_SAC_CFG(AgentCfg):
     gradient_steps: int = 1
     batch_size: int = 64
     warmup_timesteps: int = 10_000
-    il_ctrl_scale: float = 1.0
-    rl_ctrl_scale: float = 1.0
     discount_factor: float = 0.99
     polyak: float = 0.005
     actor_learning_rate: float = 3e-4
@@ -72,6 +70,7 @@ class IBRL_SAC_CFG(AgentCfg):
     soft_update_beta: float = 0.2
     actor: str = "both"
     num_envs: int = 1
+    action_ema_alpha: float = 1.0
 
     def expand(self) -> None:
         super().expand()
@@ -213,11 +212,16 @@ class IBRL(Agent):
         self._soft_update_beta = _cfg.soft_update_beta
         self._actor: str = _cfg.actor
         self._num_envs: int = _cfg.num_envs
+        self._action_ema_alpha: float = _cfg.action_ema_alpha
+        if not 0.0 < self._action_ema_alpha <= 1.0:
+            raise ValueError(
+                f"action_ema_alpha must be in (0, 1], got {self._action_ema_alpha}"
+            )
+        self._ema_actions: torch.Tensor | None = None
+        self._ema_action_valid: torch.Tensor | None = None
 
         self._actors = ["rl", "il", "both"]
 
-        self._il_ctrl_scale = _cfg.il_ctrl_scale
-        self._rl_ctrl_scale = _cfg.rl_ctrl_scale
         self._warmup_timesteps = _cfg.warmup_timesteps
 
         assert self._actor in self._actors, (
@@ -314,6 +318,7 @@ class IBRL(Agent):
         soft: bool,
         target: bool,
         timestep: int,
+        smooth_rl_action: bool = False,
     ):
         """Select an action by comparing RL and IL policies and their Q-values.
 
@@ -358,10 +363,6 @@ class IBRL(Agent):
         il_actions = il_actions[:, 0, :]
         il_states = il_obs[:, -1, :]
 
-        # scale il_actions
-        il_actions = il_actions * self._il_ctrl_scale
-        rl_actions = rl_actions * self._rl_ctrl_scale
-
         # Change this line - instead of concatenating, stack the actions
         rl_il_actions = torch.stack([rl_actions, il_actions], dim=1)
 
@@ -398,11 +399,36 @@ class IBRL(Agent):
             # use the action indecies for either rl or il in the columns
 
             # OBS: holy shit this might be it!
-            actions = rl_actions * (1 - action_indices) + il_actions * action_indices
+            rl_mask = action_indices == 0
+            smooth_mixed_rl = (
+                smooth_rl_action
+                and self._actor == "both"
+                and timestep >= self._warmup_timesteps
+            )
+            selected_rl_actions = (
+                self._smooth_action_ema(rl_actions, update_mask=rl_mask)
+                if smooth_mixed_rl
+                else rl_actions
+            )
+            actions = (
+                selected_rl_actions * (1 - action_indices) + il_actions * action_indices
+            )
         else:
             # Greedy selection
             action_indices = target_q_values.argmax(dim=1)  # Shape: [num_envs]
-            actions = rl_il_actions[torch.arange(batch_size), action_indices]
+            rl_mask = (action_indices == 0).view(-1, 1)
+            smooth_mixed_rl = (
+                smooth_rl_action
+                and self._actor == "both"
+                and timestep >= self._warmup_timesteps
+            )
+            selected_rl_actions = (
+                self._smooth_action_ema(rl_actions, update_mask=rl_mask)
+                if smooth_mixed_rl
+                else rl_actions
+            )
+            selected_actions = torch.stack([selected_rl_actions, il_actions], dim=1)
+            actions = selected_actions[torch.arange(batch_size), action_indices]
             il_ratio = action_indices.sum().item() / len(action_indices)
 
         # here "actions" is the product of both agents
@@ -411,7 +437,9 @@ class IBRL(Agent):
         actor_id = 0
 
         if self._actor == "rl":
-            actions = rl_actions
+            actions = (
+                self._smooth_action_ema(rl_actions) if smooth_rl_action else rl_actions
+            )
             actor_id = 1
 
         elif self._actor == "il":
@@ -466,6 +494,95 @@ class IBRL(Agent):
             self._prev_states = self._states
         self._states = states
         self._state_window_timestep = timestep
+
+    def _smooth_action_ema(
+        self, actions: torch.Tensor, update_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if self._action_ema_alpha >= 1.0:
+            return actions
+
+        alpha = self._action_ema_alpha
+        if self._ema_actions is None or self._ema_actions.shape != actions.shape:
+            self._ema_actions = torch.zeros_like(actions)
+            self._ema_action_valid = torch.zeros(
+                (actions.shape[0], 1),
+                device=actions.device,
+                dtype=torch.bool,
+            )
+
+        valid = self._ema_action_valid.to(device=actions.device)
+        previous = self._ema_actions.to(device=actions.device, dtype=actions.dtype)
+        smoothed = torch.where(
+            valid,
+            alpha * actions + (1.0 - alpha) * previous,
+            actions,
+        )
+
+        if update_mask is None:
+            update_mask = torch.ones_like(valid)
+        else:
+            update_mask = update_mask.to(device=actions.device, dtype=torch.bool)
+            update_mask = update_mask.view(actions.shape[0], -1)
+            if update_mask.shape[1] != 1:
+                update_mask = update_mask.any(dim=1, keepdim=True)
+
+        while update_mask.ndim < actions.ndim:
+            update_mask = update_mask.unsqueeze(-1)
+
+        self._ema_actions = torch.where(
+            update_mask,
+            smoothed.detach(),
+            self._ema_actions.to(device=actions.device, dtype=actions.dtype),
+        )
+        self._ema_action_valid = torch.where(
+            update_mask.view_as(valid),
+            torch.ones_like(valid),
+            valid,
+        )
+
+        returned = torch.where(update_mask, smoothed, actions)
+        self.track_data("Action / EMA alpha", alpha)
+        self.track_data(
+            "Action / EMA delta abs mean",
+            (actions - returned).detach().abs().mean().item(),
+        )
+        self.track_data(
+            "Action / EMA delta abs max",
+            (actions - returned).detach().abs().amax().item(),
+        )
+        return returned
+
+    def _reset_action_ema(
+        self, terminated: torch.Tensor, truncated: torch.Tensor
+    ) -> None:
+        if self._ema_actions is None or self._ema_action_valid is None:
+            return
+
+        done = (
+            (terminated | truncated)
+            .view(-1, 1)
+            .to(
+                device=self._ema_action_valid.device,
+                dtype=torch.bool,
+            )
+        )
+        if done.shape[0] != self._ema_action_valid.shape[0]:
+            self._ema_actions = None
+            self._ema_action_valid = None
+            return
+
+        while done.ndim < self._ema_actions.ndim:
+            done = done.unsqueeze(-1)
+        self._ema_actions = torch.where(
+            done,
+            torch.zeros_like(self._ema_actions),
+            self._ema_actions,
+        )
+        self._ema_action_valid = torch.where(
+            done.view_as(self._ema_action_valid),
+            torch.zeros_like(self._ema_action_valid),
+            self._ema_action_valid,
+        )
 
     def act(
         self,
@@ -524,6 +641,7 @@ class IBRL(Agent):
             soft=True,
             target=False,
             timestep=timestep,
+            smooth_rl_action=True,
         )
 
         return actions, outputs or {}
@@ -604,6 +722,8 @@ class IBRL(Agent):
             terminated=terminated,
             truncated=truncated,
         )
+
+        self._reset_action_ema(terminated, truncated)
 
     def pre_interaction(
         self,
@@ -792,13 +912,17 @@ class IBRL(Agent):
                 # compute critic loss
                 critic_1_values, _ = self._unpack_act_result(
                     self.critic_1.act(
-                        self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                        self._state_inputs(
+                            sampled_states, taken_actions=sampled_actions
+                        ),
                         role="critic_1",
                     )
                 )
                 critic_2_values, _ = self._unpack_act_result(
                     self.critic_2.act(
-                        self._state_inputs(sampled_states, taken_actions=sampled_actions),
+                        self._state_inputs(
+                            sampled_states, taken_actions=sampled_actions
+                        ),
                         role="critic_2",
                     )
                 )

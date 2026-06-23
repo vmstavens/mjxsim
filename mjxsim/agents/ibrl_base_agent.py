@@ -66,6 +66,21 @@ class Agent(SkrlAgent):
             if model is not None:
                 model.enable_training_mode(enabled)
 
+    def set_mode(self, mode: str) -> None:
+        """Compatibility hook for trainers that expect DP-style set_mode."""
+        if mode not in {"train", "eval"}:
+            raise ValueError(f"mode must be 'train' or 'eval', got {mode!r}")
+
+        enabled = mode == "train"
+        self.enable_models_training_mode(enabled)
+        for model in self.models_il.values():
+            if model is None:
+                continue
+            if hasattr(model, "set_mode"):
+                model.set_mode(mode)
+            elif hasattr(model, "train") and hasattr(model, "eval"):
+                model.train() if enabled else model.eval()
+
     @staticmethod
     def _state_inputs(states: torch.Tensor, **kwargs: Any) -> dict[str, Any]:
         """Build model inputs compatible with skrl 2 and older local models."""

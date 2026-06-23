@@ -10,6 +10,8 @@ def test_import_mjxsim_root() -> None:
 
     assert mjxsim.__version__
     assert "DiffusionPolicy" in mjxsim.__all__
+    assert "DRLR_SAC_CFG" in mjxsim.__all__
+    assert "DRLR_CFG" not in mjxsim.__all__
     assert "PushTStateDataset" in mjxsim.__all__
     assert "pipe" in mjxsim.__all__
     assert "register" in mjxsim.__all__
@@ -21,6 +23,7 @@ def test_namespaced_submodule_imports() -> None:
     from mjxsim.agents import (
         AutoencoderAgent,
         DiffusionPolicy,
+        DRLR_SAC_CFG,
         GNNAgent,
         LatentDistillerAgent,
     )
@@ -31,6 +34,7 @@ def test_namespaced_submodule_imports() -> None:
     from mjxsim.utils.modelling import cable, pipe
 
     assert DiffusionPolicy.__name__ == "DiffusionPolicy"
+    assert DRLR_SAC_CFG.__name__ == "DRLR_SAC_CFG"
     assert AutoencoderAgent.__name__ == "AutoencoderAgent"
     assert GNNAgent.__name__ == "GNNAgent"
     assert LatentDistillerAgent.__name__ == "LatentDistillerAgent"

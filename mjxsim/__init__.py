@@ -21,7 +21,11 @@ if TYPE_CHECKING:
         VISION_DP_CFG,
         DiffusionPolicyVision,
     )
-    from mjxsim.agents.drlr_sac import DRLR, DRLR_CFG, DRLR_DEFAULT_CONFIG  # noqa: F401
+    from mjxsim.agents.drlr_sac import (  # noqa: F401
+        DRLR,
+        DRLR_SAC_CFG,
+        DRLR_SAC_DEFAULT_CONFIG,
+    )
     from mjxsim.agents.drlr2_sac import (  # noqa: F401
         DRLR2,
         DRLR2_SAC_CFG,
@@ -98,11 +102,11 @@ _AGENT_EXPORTS = [
     "DiffusionPolicy",
     "DiffusionPolicyVision",
     "DRLR",
+    "DRLR_SAC_CFG",
+    "DRLR_SAC_DEFAULT_CONFIG",
     "DRLR2",
     "DRLR2_SAC_CFG",
     "DRLR2_SAC_DEFAULT_CONFIG",
-    "DRLR_CFG",
-    "DRLR_DEFAULT_CONFIG",
     "EMAModel",
     "GNN_CFG",
     "GNN_DEFAULT_CONFIG",
@@ -162,11 +166,11 @@ _EXPORT_MODULES = {
     "DiffusionPolicy": "mjxsim.agents.diffusion_policy_state",
     "DiffusionPolicyVision": "mjxsim.agents.diffusion_policy_vision",
     "DRLR": "mjxsim.agents.drlr_sac",
+    "DRLR_SAC_CFG": "mjxsim.agents.drlr_sac",
+    "DRLR_SAC_DEFAULT_CONFIG": "mjxsim.agents.drlr_sac",
     "DRLR2": "mjxsim.agents.drlr2_sac",
     "DRLR2_SAC_CFG": "mjxsim.agents.drlr2_sac",
     "DRLR2_SAC_DEFAULT_CONFIG": "mjxsim.agents.drlr2_sac",
-    "DRLR_CFG": "mjxsim.agents.drlr_sac",
-    "DRLR_DEFAULT_CONFIG": "mjxsim.agents.drlr_sac",
     "EMAModel": "mjxsim.agents.diffusion_policy_state",
     "GNN_CFG": "mjxsim.agents.gnn",
     "GNN_DEFAULT_CONFIG": "mjxsim.agents.gnn",
