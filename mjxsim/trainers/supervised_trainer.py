@@ -59,6 +59,18 @@ class SupervisedTrainerCfg:
     checkpoint_interval: int = 0
     """Epoch interval reserved for supervised checkpoint callbacks."""
 
+    early_stopping_patience: int | None = None
+    """Number of validation evaluations without improvement before stopping.
+
+    ``None`` disables early stopping.
+    """
+
+    early_stopping_min_delta: float = 0.0
+    """Minimum validation-loss decrease required to count as an improvement."""
+
+    restore_best_weights: bool = True
+    """Whether to restore registered checkpoint modules from the best validation."""
+
     experiment: ExperimentCfg | dict[str, Any] = dataclasses.field(
         default_factory=lambda: ExperimentCfg(
             directory="",
@@ -76,6 +88,15 @@ class SupervisedTrainerCfg:
             self.experiment = ExperimentCfg(**self.experiment)
         if self.num_epochs is None:
             self.num_epochs = self.epochs
+        if self.eval_frequency < 1:
+            raise ValueError("eval_frequency must be at least 1")
+        if (
+            self.early_stopping_patience is not None
+            and self.early_stopping_patience < 1
+        ):
+            raise ValueError("early_stopping_patience must be at least 1 or None")
+        if self.early_stopping_min_delta < 0:
+            raise ValueError("early_stopping_min_delta must be non-negative")
 
     def to_dict(self) -> dict[str, Any]:
         self.expand()
@@ -134,6 +155,9 @@ class SupervisedTrainer:
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self._callback_fn = callback_fn
+        self.early_stopped = False
+        self.best_epoch: int | None = None
+        self.best_validation_loss: float | None = None
 
         if hasattr(self.agent, "cfg") and hasattr(self.agent.cfg, "experiment"):
             self.agent.cfg.experiment = copy.deepcopy(self.config.experiment)
@@ -157,14 +181,49 @@ class SupervisedTrainer:
         targets = targets.to(self.agent.device)
         return self.agent._update(inputs, targets)
 
+    def _snapshot_checkpoint_modules(self) -> dict[str, Any]:
+        """Copy state for the modules an agent declares checkpointable.
+
+        Falling back to ``agent.model`` keeps the trainer usable with simple
+        supervised agents that do not register ``checkpoint_modules``.
+        """
+        modules = getattr(self.agent, "checkpoint_modules", None)
+        if not isinstance(modules, Mapping) or not modules:
+            model = getattr(self.agent, "model", None)
+            modules = {"model": model}
+
+        return {
+            name: copy.deepcopy(module.state_dict())
+            for name, module in modules.items()
+            if module is not None and hasattr(module, "state_dict")
+        }
+
+    def _restore_checkpoint_modules(self, state: Mapping[str, Any]) -> None:
+        modules = getattr(self.agent, "checkpoint_modules", None)
+        if not isinstance(modules, Mapping) or not modules:
+            modules = {"model": getattr(self.agent, "model", None)}
+
+        for name, module_state in state.items():
+            module = modules.get(name)
+            if module is not None and hasattr(module, "load_state_dict"):
+                module.load_state_dict(module_state)
+
     def train(self):
         assert self.train_loader is not None, "Set train_loader first"
+        if (
+            self.config.early_stopping_patience is not None
+            and self.valid_loader is None
+        ):
+            raise ValueError("early stopping requires a valid_loader")
 
         if hasattr(self.agent, "set_running_mode"):
             self.agent.set_running_mode("train")
         elif hasattr(self.agent, "enable_training_mode"):
             self.agent.enable_training_mode(True)
         self.agent.set_mode("train")
+
+        best_state: dict[str, Any] | None = None
+        stale_evaluations = 0
 
         for epoch in range(self.epochs):
             epoch_loss, batch_count = 0.0, 0
@@ -182,14 +241,50 @@ class SupervisedTrainer:
             avg_loss = epoch_loss / batch_count
             self.agent.track_data("Training / Loss", avg_loss)
 
-            if epoch % self.eval_frequency == 0 and self._callback_fn:
-                val_loss = None
-                if self.valid_loader is not None:
-                    val_loss = self._validate()
-                    self.agent.track_data("Validation / Loss", val_loss)
-                    self.agent.set_mode("train")
-                self._callback_fn(epoch, avg_loss, val_loss)
+            val_loss = None
+            if (
+                self.valid_loader is not None
+                and epoch % self.eval_frequency == 0
+            ):
+                val_loss = self._validate()
+                self.agent.track_data("Validation / Loss", val_loss)
+                if self._callback_fn:
+                    self._callback_fn(epoch, avg_loss, val_loss)
                 self.agent.set_mode("train")
+
+                if (
+                    self.best_validation_loss is None
+                    or val_loss
+                    < self.best_validation_loss - self.config.early_stopping_min_delta
+                ):
+                    self.best_validation_loss = val_loss
+                    self.best_epoch = epoch
+                    stale_evaluations = 0
+                    best_state = self._snapshot_checkpoint_modules()
+                else:
+                    stale_evaluations += 1
+
+                if (
+                    self.config.early_stopping_patience is not None
+                    and stale_evaluations >= self.config.early_stopping_patience
+                ):
+                    self.early_stopped = True
+                    logger.info(
+                        "Early stopping at epoch %s; best validation loss %.6f at epoch %s",
+                        epoch + 1,
+                        self.best_validation_loss,
+                        self.best_epoch + 1 if self.best_epoch is not None else None,
+                    )
+                    if self.config.restore_best_weights and best_state:
+                        self._restore_checkpoint_modules(best_state)
+                    break
+
+            if (
+                self._callback_fn
+                and val_loss is None
+                and epoch % self.eval_frequency == 0
+            ):
+                self._callback_fn(epoch, avg_loss, None)
 
             if (
                 self.config.write_interval > 0
