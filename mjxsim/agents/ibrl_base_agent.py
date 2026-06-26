@@ -72,7 +72,7 @@ class Agent(SkrlAgent):
             raise ValueError(f"mode must be 'train' or 'eval', got {mode!r}")
 
         enabled = mode == "train"
-        self.enable_models_training_mode(enabled)
+        self.enable_training_mode(enabled, apply_to_models=True)
         for model in self.models_il.values():
             if model is None:
                 continue
