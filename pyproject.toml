@@ -22,6 +22,7 @@ dependencies = [
     "gym>=0.26",
     "gym-pusht",
     "gymnasium>=0.28",
+    "jax-cuda13-plugin>=0.9.0.1",
     "jax[cuda13]",
     "jaxlib",
     "jaxlie>=1.5.0",
@@ -32,6 +33,7 @@ dependencies = [
     "mujoco-mjx>=3.4.0",
     "numpy",
     "opencv-python",
+    "optax",
     "packaging",
     "pandas",
     "pillow",
@@ -49,7 +51,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["jax[cuda12]>=0.9.0.1"]
+cuda = ["jax[cuda13]>=0.9.0.1"]
 datasets = [
     "gdown",
     "opencv-python",

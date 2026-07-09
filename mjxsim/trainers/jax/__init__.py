@@ -1,6 +1,6 @@
-"""Compatibility import for the Torch supervised trainer."""
+"""JAX-backed trainers."""
 
-from mjxsim.trainers.torch.supervised_trainer import (
+from mjxsim.trainers.jax.supervised_trainer import (
     SUPERVISED_TRAINER_DEFAULT_CONFIG,
     SupervisedTrainer,
     SupervisedTrainerCfg,
