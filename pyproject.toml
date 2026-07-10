@@ -42,7 +42,7 @@ dependencies = [
     "pymunk",
     "robot-descriptions>=1.22.0",
     "shapely",
-    "skrl>=2.0.0",
+    "skrl>=2.1,<2.2",
     "torch",
     "tqdm",
     "tyro",
@@ -91,7 +91,7 @@ examples = [
     "pygame",
     "pymunk",
     "shapely",
-    "skrl>=2.0.0",
+    "skrl>=2.1,<2.2",
     "torch",
     "torchvision>=0.25.0",
     "tqdm",
@@ -117,7 +117,7 @@ mujoco = [
     "shapely",
     "tyro",
 ]
-rl = ["skrl>=2.0.0", "torch"]
+rl = ["skrl>=2.1,<2.2", "torch"]
 stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
@@ -139,3 +139,9 @@ allow-direct-references = true
 
 [tool.uv.sources]
 mjsim = { git = "https://github.com/vmstavens/mjsim.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+]

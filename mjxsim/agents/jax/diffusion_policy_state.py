@@ -201,11 +201,13 @@ class DiffusionPolicy:
         o_dim: int,
         config: DP_CFG | Mapping[str, Any] | None = None,
         rng: jax.Array | None = None,
+        stats: Mapping[str, Any] | None = None,
     ):
         self.config = _coerce_cfg(config)
         self.a_dim = a_dim
         self.o_dim = o_dim
         self.rng = jax.random.PRNGKey(0) if rng is None else rng
+        self.stats = copy.deepcopy(stats)
         self.model = ConditionalUnet1D(a_dim=a_dim, o_dim=o_dim, config=self.config)
         variables = self.model.init(
             self.rng,
@@ -259,10 +261,14 @@ class DiffusionPolicy:
         params: Any | None = None,
         rng: jax.Array | None = None,
         num_steps: int | None = None,
+        normalize_obs: bool | None = None,
+        unnormalize_act: bool | None = None,
     ) -> jax.Array:
         rng = self.rng if rng is None else rng
         variables = {"params": self.params if params is None else params}
         obs = self._as_obs_array(observations)
+        if self.stats is not None and normalize_obs is not False:
+            obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
         batch_size = obs.shape[0]
         steps = self.config.num_diffusion_iters if num_steps is None else num_steps
         actions = jax.random.normal(
@@ -275,6 +281,10 @@ class DiffusionPolicy:
             pred_noise = self.model.apply(variables, actions, t, obs)
             alpha = self.alphas_cumprod[timestep]
             actions = (actions - jp.sqrt(1.0 - alpha) * pred_noise) / jp.sqrt(alpha)
+        if self.stats is not None and unnormalize_act is not False:
+            actions = self._minmax_scale(
+                actions, self.stats["action"], inverse=True
+            )
         return actions
 
     def state_dict(self) -> dict[str, Any]:
@@ -284,6 +294,7 @@ class DiffusionPolicy:
             "o_dim": self.o_dim,
             "params": jax.device_get(self.params),
             "ema_params": self.ema.copy_to(),
+            "stats": self.stats,
         }
 
     def save(self, path: str | Path | None = None) -> None:
@@ -309,10 +320,20 @@ class DiffusionPolicy:
             o_dim=checkpoint["o_dim"],
             config=checkpoint["config"],
             rng=rng,
+            stats=checkpoint.get("stats"),
         )
         policy.params = checkpoint["params"]
         policy.ema.shadow_params = checkpoint.get("ema_params", policy.params)
         return policy
+
+    @staticmethod
+    def _minmax_scale(value: jax.Array, stats: Mapping[str, Any], *, inverse: bool):
+        minimum = jp.asarray(stats["min"], dtype=value.dtype)
+        maximum = jp.asarray(stats["max"], dtype=value.dtype)
+        scale = jp.where(maximum > minimum, maximum - minimum, 1)
+        if inverse:
+            return 0.5 * (value + 1) * scale + minimum
+        return 2 * (value - minimum) / scale - 1
 
     def _get_batch_arrays(self, batch: Any) -> tuple[jax.Array, jax.Array]:
         if not isinstance(batch, Mapping):

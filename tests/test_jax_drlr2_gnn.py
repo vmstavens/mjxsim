@@ -2,31 +2,36 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jp
+import gymnasium
+import numpy as np
 
-from mjxsim.agents.jax.drlr2_sac import DRLR2
+from mjxsim.agents.jax.drlr2_sac import DRLR2, DRLR2_SAC_CFG
 from mjxsim.agents.jax.gnn import GNN_CFG, GNNAgent, normalized_chain_adjacency
 from mjxsim.trainers.jax.supervised_trainer import SupervisedTrainer
 
 
-def _linear_action(params, observations):
-    return observations @ params["w"]
-
-
-def test_jax_drlr2_policy_composition() -> None:
-    observations = jp.ones((2, 3), dtype=jp.float32)
-    params = {"w": jp.ones((3, 2), dtype=jp.float32)}
-    imitation_params = {"w": jp.full((3, 2), 2.0, dtype=jp.float32)}
-
-    agent = DRLR2(
-        policy=_linear_action,
-        imitation_policy=_linear_action,
-        params=params,
-        imitation_params=imitation_params,
-        cfg={"actor": "both", "soft_update_beta": 0.25},
+def test_jax_drlr2_config_and_action_normalization() -> None:
+    cfg = DRLR2_SAC_CFG(
+        actor_learning_rate=1e-4,
+        critic_learning_rate=2e-4,
+        entropy_learning_rate=3e-4,
     )
+    cfg.expand()
+    assert cfg.learning_rate == (1e-4, 2e-4, 3e-4)
 
-    expected = 0.25 * jp.full((2, 2), 6.0) + 0.75 * jp.full((2, 2), 3.0)
-    assert jp.allclose(agent.act(observations), expected)
+    # Exercise the pure action-space helpers without constructing SKRL models.
+    agent = object.__new__(DRLR2)
+    action_space = gymnasium.spaces.Box(
+        low=np.array([-2.0, 0.0], dtype=np.float32),
+        high=np.array([2.0, 4.0], dtype=np.float32),
+        dtype=np.float32,
+    )
+    agent.clip_actions_min = jp.asarray(action_space.low)
+    agent.clip_actions_max = jp.asarray(action_space.high)
+    actions = jp.array([[-2.0, 0.0], [0.0, 2.0], [2.0, 4.0]])
+    normalized = agent._normalize_action(actions)
+    assert jp.allclose(normalized, jp.array([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]]))
+    assert jp.allclose(agent._unnormalize_action(normalized), actions)
 
 
 def test_jax_gnn_loss_and_training_step() -> None:

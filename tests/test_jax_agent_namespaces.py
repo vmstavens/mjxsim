@@ -66,3 +66,13 @@ def test_jax_diffusion_policy_loss_and_action_shapes() -> None:
 
     assert loss.shape == ()
     assert actions.shape == (2, 4, 2)
+
+
+def test_jax_diffusion_policy_minmax_scaling_round_trip() -> None:
+    values = jp.array([[0.0, 2.0], [1.0, 4.0]], dtype=jp.float32)
+    stats = {"min": jp.array([0.0, 2.0]), "max": jp.array([1.0, 4.0])}
+    normalized = DiffusionPolicy._minmax_scale(values, stats, inverse=False)
+    assert jp.allclose(normalized, jp.array([[-1.0, -1.0], [1.0, 1.0]]))
+    assert jp.allclose(
+        DiffusionPolicy._minmax_scale(normalized, stats, inverse=True), values
+    )
