@@ -30,6 +30,8 @@ __all__ = [
     "override_action_space",
     "pipe",
     "register",
+    "create_drlr2_memory",
+    "load_expert_memory",
     "robot",
     "set_pose",
     "set_state",
@@ -58,6 +60,8 @@ def __getattr__(name: str) -> Any:
         return import_module("mjxsim.utils.datahandler").DataHandler
     if name == "split_dataset":
         return import_module("mjxsim.utils.datasets").split_dataset
+    if name in {"create_drlr2_memory", "load_expert_memory"}:
+        return getattr(import_module("mjxsim.utils.jax_replay"), name)
     if name in _MJX_EXPORTS:
         return getattr(import_module("mjxsim.utils.mjx"), name)
     if name in _MODELLING_EXPORTS:

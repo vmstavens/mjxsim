@@ -76,3 +76,6 @@ def test_jax_diffusion_policy_minmax_scaling_round_trip() -> None:
     assert jp.allclose(
         DiffusionPolicy._minmax_scale(normalized, stats, inverse=True), values
     )
+    computed = DiffusionPolicy.compute_stats(values[:, None, :], values[:, None, :])
+    assert jp.allclose(computed["obs"]["min"], jp.array([0.0, 2.0]))
+    assert jp.allclose(computed["action"]["max"], jp.array([1.0, 4.0]))

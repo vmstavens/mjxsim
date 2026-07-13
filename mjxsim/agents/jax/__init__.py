@@ -27,7 +27,13 @@ from mjxsim.agents.jax.drlr2_sac import (
     DRLR2,
     DRLR2_SAC_CFG,
     DRLR2_SAC_DEFAULT_CONFIG,
+    DiffusionPolicyAdapter,
+    FrozenActorPolicyAdapter,
+    JaxDRLR2,
+    JaxDRLR2Config,
 )
+from mjxsim.agents.jax.action_transform import ActionTransform
+from mjxsim.agents.jax.sac_models import GaussianActor, QCritic, make_sac_models
 from mjxsim.agents.jax.gnn import (
     GNN_CFG,
     GNN_DEFAULT_CONFIG,
@@ -47,6 +53,7 @@ __all__ = [
     "AE_DEFAULT_CONFIG",
     "Autoencoder",
     "AutoencoderAgent",
+    "ActionTransform",
     "ConditionalUnet1D",
     "DIFFUSION_POLICY_STATE_DEFAULT_CONFIG",
     "DIFFUSION_POLICY_VISION_DEFAULT_CONFIG",
@@ -58,8 +65,11 @@ __all__ = [
     "DRLR_SAC_CFG",
     "DRLR_SAC_DEFAULT_CONFIG",
     "DiffusionPolicy",
+    "DiffusionPolicyAdapter",
     "DiffusionPolicyVision",
     "EMAModel",
+    "FrozenActorPolicyAdapter",
+    "GaussianActor",
     "GNN_CFG",
     "GNN_DEFAULT_CONFIG",
     "GNNAgent",
@@ -68,6 +78,10 @@ __all__ = [
     "IBRL",
     "IBRL_SAC_CFG",
     "IBRL_SAC_DEFAULT_CONFIG",
+    "JaxDRLR2",
+    "JaxDRLR2Config",
+    "QCritic",
     "VISION_DP_CFG",
     "normalized_chain_adjacency",
+    "make_sac_models",
 ]

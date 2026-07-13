@@ -22,6 +22,7 @@ from skrl.memories.jax import Memory
 from skrl.models.jax import Model
 
 from .diffusion_policy_state import DiffusionPolicy
+from .action_transform import ActionTransform
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -83,9 +84,10 @@ DRLR2_SAC_DEFAULT_CONFIG = DRLR2_SAC_CFG()
 class DiffusionPolicyAdapter:
     """Expose the local Flax diffusion policy through SKRL's ``act`` surface."""
 
-    def __init__(self, policy: DiffusionPolicy):
+    def __init__(self, policy: DiffusionPolicy, action_transform: ActionTransform):
         self.policy = policy
         self.rng = policy.rng
+        self.action_transform = action_transform
 
     def act(
         self,
@@ -99,20 +101,39 @@ class DiffusionPolicyAdapter:
         observations = inputs.get("observations", inputs.get("states"))
         if rng is None:
             self.rng, rng = jax.random.split(self.rng)
-        return (
-            self.policy.act(
-                observations,
-                rng=rng,
-                unnormalize_act=unnormalize_act,
-            ),
-            {},
+        actions = jnp.clip(
+            self.policy.act(observations, rng=rng, unnormalize_act=False), -1, 1
         )
+        if unnormalize_act:
+            actions = self.action_transform.denormalize(actions)
+        return actions, {}
 
     def enable_training_mode(self, enabled: bool = True) -> None:
         del enabled  # frozen during RL training
 
     def state_dict(self) -> dict[str, Any]:
         return self.policy.state_dict()
+
+
+class FrozenActorPolicyAdapter:
+    """Use a frozen SKRL Flax actor as a one-step imitation policy."""
+
+    def __init__(self, actor: Model, action_transform: ActionTransform):
+        self.actor = actor
+        self.action_transform = action_transform
+
+    def act(self, inputs, *, role="policy", unnormalize_act=False, rng=None):
+        del rng
+        observations = inputs.get("observations", inputs.get("states"))
+        if observations.ndim == 3:
+            observations = observations[:, -1, :]
+        model_inputs = {"observations": observations, "states": observations}
+        mean, _ = self.actor.apply(self.actor.state_dict.params, model_inputs, role)
+        actions = self.action_transform.denormalize(mean) if unnormalize_act else mean
+        return actions[:, None, :], {}
+
+    def enable_training_mode(self, enabled=True):
+        del enabled
 
 
 @functools.partial(jax.jit, static_argnames=("critic_act", "role"))
@@ -177,6 +198,7 @@ class DRLR2(SAC):
         cfg.expand()
         self.models_il = dict(models_il)
         self.expert_memory = expert_memory
+        state_space = observation_space if state_space is None else state_space
         super().__init__(
             models=dict(models),
             memory=memory,
@@ -187,9 +209,12 @@ class DRLR2(SAC):
             cfg=cfg,
         )
         self.cfg: DRLR2_SAC_CFG
+        self.action_transform = ActionTransform.from_space(action_space)
         self.IL_policy = self.models_il["policy"]
         if isinstance(self.IL_policy, DiffusionPolicy):
-            self.IL_policy = DiffusionPolicyAdapter(self.IL_policy)
+            self.IL_policy = DiffusionPolicyAdapter(
+                self.IL_policy, self.action_transform
+            )
         self._states = None
         self._prev_states = None
         self._state_window_timestep = None
@@ -198,11 +223,6 @@ class DRLR2(SAC):
         self.expert_mean_states = None
         self.expert_mean_rewards = None
         self.expert_cov_states = None
-        if isinstance(action_space, gymnasium.spaces.Box):
-            self.clip_actions_min = jnp.asarray(action_space.low, dtype=jnp.float32)
-            self.clip_actions_max = jnp.asarray(action_space.high, dtype=jnp.float32)
-        else:
-            self.clip_actions_min = self.clip_actions_max = None
 
     def init(self, *, trainer_cfg: dict[str, Any] | None = None) -> None:
         super().init(trainer_cfg=trainer_cfg)
@@ -235,24 +255,10 @@ class DRLR2(SAC):
         self.expert_cov_states = jnp.linalg.inv(cov + 1e-6 * jnp.eye(cov.shape[0]))
 
     def _normalize_action(self, action: jax.Array) -> jax.Array:
-        if self.clip_actions_min is None or self.clip_actions_max is None:
-            raise ValueError("Action normalization requires a Box action space")
-        scale = jnp.where(
-            self.clip_actions_max > self.clip_actions_min,
-            self.clip_actions_max - self.clip_actions_min,
-            1,
-        )
-        return jnp.clip(2 * (action - self.clip_actions_min) / scale - 1, -1, 1)
+        return self.action_transform.normalize(action)
 
     def _unnormalize_action(self, action: jax.Array) -> jax.Array:
-        if self.clip_actions_min is None or self.clip_actions_max is None:
-            raise ValueError("Action normalization requires a Box action space")
-        scale = jnp.where(
-            self.clip_actions_max > self.clip_actions_min,
-            self.clip_actions_max - self.clip_actions_min,
-            1,
-        )
-        return 0.5 * (jnp.clip(action, -1, 1) + 1) * scale + self.clip_actions_min
+        return self.action_transform.denormalize(action)
 
     def _set_current_states(self, states: jax.Array, timestep: int) -> None:
         self._prev_states = states if self._states is None else self._states
@@ -335,9 +341,10 @@ class DRLR2(SAC):
         if self._state_window_timestep != timestep:
             self._set_current_states(observations, timestep)
         if timestep < self.cfg.random_timesteps:
-            return self.policy.random_act(
+            actions, outputs = self.policy.random_act(
                 {"observations": observations, "states": observations}, role="policy"
             )
+            return self._unnormalize_action(actions), outputs
         history = jnp.stack((self._prev_states, self._states), axis=1)
         if timestep < self.cfg.warmup_timesteps or self.cfg.actor == "il":
             actions, _ = self.IL_policy.act(
@@ -369,8 +376,32 @@ class DRLR2(SAC):
         return actions, outputs
 
     def record_transition(self, **kwargs) -> None:
+        kwargs = dict(kwargs)
+        kwargs["actions"] = self._normalize_action(kwargs["actions"])
         super().record_transition(**kwargs)
         self._reset_action_ema(kwargs["terminated"], kwargs["truncated"])
+
+    def act_deterministic(self, observations, states=None, *, actor=None):
+        """Return physical actions without stochastic RL exploration."""
+        del states
+        mode = self.cfg.actor if actor is None else actor
+        if mode == "il":
+            history = jnp.stack((observations, observations), axis=1)
+            actions, _ = self.IL_policy.act(
+                {"observations": history, "states": history},
+                role="policy",
+                unnormalize_act=True,
+            )
+            return actions[:, 0, :]
+        inputs = {"observations": observations, "states": observations}
+        mean, _ = self.policy.apply(self.policy.state_dict.params, inputs, "policy")
+        return self._unnormalize_action(mean)
+
+    def save_actor(self, path: str) -> None:
+        self.policy.save(path)
+
+    def load_actor(self, path: str) -> None:
+        self.policy.load(path)
 
     def update(self, *, timestep: int, timesteps: int) -> None:
         del timesteps
@@ -412,7 +443,7 @@ class DRLR2(SAC):
                 * jnp.logical_not(terminated)
                 * (jnp.minimum(tq1, tq2) - self._entropy_coefficient * next_log_prob)
             )
-            critic_inputs = {**inputs, "taken_actions": self._normalize_action(actions)}
+            critic_inputs = {**inputs, "taken_actions": actions}
             (loss1, q1), grad1 = _critic_gradient(
                 self.critic_1.act,
                 self.critic_1.state_dict,
@@ -431,10 +462,14 @@ class DRLR2(SAC):
                 grad1 = self.critic_1.reduce_parameters(grad1)
                 grad2 = self.critic_2.reduce_parameters(grad2)
             self.critic_1_optimizer = self.critic_1_optimizer.step(
-                grad=grad1, model=self.critic_1
+                grad=grad1,
+                model=self.critic_1,
+                lr=self.critic_learning_rate if self.critic_scheduler else None,
             )
             self.critic_2_optimizer = self.critic_2_optimizer.step(
-                grad=grad2, model=self.critic_2
+                grad=grad2,
+                model=self.critic_2,
+                lr=self.critic_learning_rate if self.critic_scheduler else None,
             )
             (policy_loss, (log_prob, bc_loss)), policy_grad = _policy_gradient(
                 self.policy.act,
@@ -445,12 +480,14 @@ class DRLR2(SAC):
                 self.critic_2.state_dict,
                 self._entropy_coefficient,
                 inputs,
-                self._normalize_action(actions),
+                actions,
             )
             if config.jax.is_distributed:
                 policy_grad = self.policy.reduce_parameters(policy_grad)
             self.policy_optimizer = self.policy_optimizer.step(
-                grad=policy_grad, model=self.policy
+                grad=policy_grad,
+                model=self.policy,
+                lr=self.policy_learning_rate if self.policy_scheduler else None,
             )
             if self.cfg.learn_entropy:
                 from skrl.agents.jax.sac.sac import _update_entropy
@@ -466,6 +503,10 @@ class DRLR2(SAC):
                 self._entropy_coefficient = jnp.exp(self.log_entropy_coefficient.value)
             self.target_critic_1.update_parameters(self.critic_1, polyak=self.cfg.polyak)
             self.target_critic_2.update_parameters(self.critic_2, polyak=self.cfg.polyak)
+            if self.policy_scheduler:
+                self.policy_learning_rate *= self.policy_scheduler(timestep)
+            if self.critic_scheduler:
+                self.critic_learning_rate *= self.critic_scheduler(timestep)
             if self.write_interval > 0:
                 self.track_data("Loss / Policy loss", policy_loss.item())
                 self.track_data("Loss / Critic loss", (loss1 + loss2).item())
@@ -476,10 +517,17 @@ class DRLR2(SAC):
                     self.track_data("Loss / Entropy loss", entropy_loss.item())
 
 
+JaxDRLR2 = DRLR2
+JaxDRLR2Config = DRLR2_SAC_CFG
+
+
 __all__ = [
     "DRLR2",
     "DRLR2_SAC_CFG",
     "DRLR2_SAC_DEFAULT_CONFIG",
     "DiffusionPolicyAdapter",
+    "FrozenActorPolicyAdapter",
+    "JaxDRLR2",
+    "JaxDRLR2Config",
     "ExplorationCfg",
 ]

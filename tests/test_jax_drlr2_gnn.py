@@ -6,6 +6,7 @@ import gymnasium
 import numpy as np
 
 from mjxsim.agents.jax.drlr2_sac import DRLR2, DRLR2_SAC_CFG
+from mjxsim.agents.jax.action_transform import ActionTransform
 from mjxsim.agents.jax.gnn import GNN_CFG, GNNAgent, normalized_chain_adjacency
 from mjxsim.trainers.jax.supervised_trainer import SupervisedTrainer
 
@@ -26,8 +27,7 @@ def test_jax_drlr2_config_and_action_normalization() -> None:
         high=np.array([2.0, 4.0], dtype=np.float32),
         dtype=np.float32,
     )
-    agent.clip_actions_min = jp.asarray(action_space.low)
-    agent.clip_actions_max = jp.asarray(action_space.high)
+    agent.action_transform = ActionTransform.from_space(action_space)
     actions = jp.array([[-2.0, 0.0], [0.0, 2.0], [2.0, 4.0]])
     normalized = agent._normalize_action(actions)
     assert jp.allclose(normalized, jp.array([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]]))

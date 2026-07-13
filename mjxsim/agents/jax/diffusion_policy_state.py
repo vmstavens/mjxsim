@@ -207,7 +207,9 @@ class DiffusionPolicy:
         self.a_dim = a_dim
         self.o_dim = o_dim
         self.rng = jax.random.PRNGKey(0) if rng is None else rng
-        self.stats = copy.deepcopy(stats)
+        self.stats = None
+        if stats is not None:
+            self.set_stats(stats)
         self.model = ConditionalUnet1D(a_dim=a_dim, o_dim=o_dim, config=self.config)
         variables = self.model.init(
             self.rng,
@@ -237,6 +239,11 @@ class DiffusionPolicy:
 
     def loss(self, params: Any, batch: Any, rng: jax.Array) -> jax.Array:
         obs, actions = self._get_batch_arrays(batch)
+        if self.stats is not None:
+            obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
+            actions = self._minmax_scale(
+                actions, self.stats["action"], inverse=False
+            )
         batch_size = actions.shape[0]
         rng_t, rng_noise = jax.random.split(rng)
         timesteps = jax.random.randint(
@@ -325,6 +332,42 @@ class DiffusionPolicy:
         policy.params = checkpoint["params"]
         policy.ema.shadow_params = checkpoint.get("ema_params", policy.params)
         return policy
+
+    def set_stats(self, stats: Mapping[str, Any]) -> None:
+        """Attach validated training-split observation and action statistics."""
+        result = {}
+        for name, expected_dim in (("obs", self.o_dim), ("action", self.a_dim)):
+            if name not in stats:
+                raise KeyError(f"Missing diffusion statistics: {name}")
+            item = stats[name]
+            if "min" not in item or "max" not in item:
+                raise KeyError(f"{name} statistics require 'min' and 'max'")
+            minimum = jp.asarray(item["min"], dtype=jp.float32)
+            maximum = jp.asarray(item["max"], dtype=jp.float32)
+            if minimum.shape[-1] != expected_dim or maximum.shape != minimum.shape:
+                raise ValueError(f"Invalid {name} statistics shape")
+            if not bool(jp.all(jp.isfinite(minimum)) and jp.all(jp.isfinite(maximum))):
+                raise ValueError(f"{name} statistics contain non-finite values")
+            result[name] = {"min": minimum, "max": maximum}
+        self.stats = result
+
+    @staticmethod
+    def compute_stats(observations: Any, actions: Any) -> dict[str, dict[str, jax.Array]]:
+        """Compute min/max normalization statistics from a training split."""
+        observations = jp.asarray(observations, dtype=jp.float32)
+        actions = jp.asarray(actions, dtype=jp.float32)
+        obs_axes = tuple(range(observations.ndim - 1))
+        action_axes = tuple(range(actions.ndim - 1))
+        return {
+            "obs": {
+                "min": jp.min(observations, axis=obs_axes),
+                "max": jp.max(observations, axis=obs_axes),
+            },
+            "action": {
+                "min": jp.min(actions, axis=action_axes),
+                "max": jp.max(actions, axis=action_axes),
+            },
+        }
 
     @staticmethod
     def _minmax_scale(value: jax.Array, stats: Mapping[str, Any], *, inverse: bool):
