@@ -27,7 +27,6 @@ dependencies = [
     "jaxlib",
     "jaxlie>=1.5.0",
     "matplotlib>=3.10.8",
-    "mjsim",
     "ml-collections",
     "mujoco>=3.4.0",
     "mujoco-mjx>=3.4.0",
@@ -136,9 +135,6 @@ exclude = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.uv.sources]
-mjsim = { git = "https://github.com/vmstavens/mjsim.git" }
 
 [dependency-groups]
 dev = [
