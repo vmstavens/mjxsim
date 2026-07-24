@@ -61,7 +61,6 @@ datasets = [
     "zarr",
 ]
 diffusion = ["diffusers>=0.36.0", "torch", "wandb"]
-fast-diffusion = ["diffusers>=0.36.0", "mamba-ssm>=2.2,<2.3", "torch"]
 envs = [
     "gym>=0.26",
     "gym-pusht",

@@ -1,22 +1,17 @@
 import copy
 import dataclasses
 import logging
+import math
 import os
 from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
+from diffusers import DDPMScheduler
 from diffusers.optimization import get_scheduler
+from diffusers.utils.torch_utils import randn_tensor
 from skrl.agents.torch.base import Agent, AgentCfg, ExperimentCfg, Model
 from skrl.models.torch import DeterministicMixin
-
-from mjxsim.diffusion.torch import (
-    ConditionalUnet1D,  # noqa: F401 - backwards-compatible public import
-    DiffusionSampler,
-    SchedulerConfig,
-    build_backbone,
-    build_noise_scheduler,
-)
 
 logging.basicConfig(level=logging.INFO)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory
@@ -74,33 +69,6 @@ class DP_CFG(AgentCfg):
 
     num_diffusion_iters: int = 100
     """Number of diffusion training timesteps."""
-
-    num_inference_steps: int | None = None
-    """Default sampling steps. ``None`` preserves the training-timestep default."""
-
-    scheduler_type: str = "ddpm"
-    """Inference/training scheduler: ``"ddpm"`` or few-step ``"ddim"``."""
-
-    backbone: str = "unet"
-    """Denoising backbone: ``"unet"`` or the optional ``"mamba"`` backend."""
-
-    warm_start_std: float = 0.1
-    """Standard deviation around an explicitly supplied historical action chunk."""
-
-    mamba_model_dim: int = 128
-    """Token dimension used by the optional Mamba denoiser."""
-
-    mamba_state_dim: int = 16
-    """State dimension used by each Mamba block."""
-
-    mamba_conv_dim: int = 4
-    """Local convolution width internal to each Mamba block."""
-
-    mamba_expand: int = 2
-    """Expansion factor used by each Mamba block."""
-
-    mamba_layers: int = 4
-    """Number of residual Mamba blocks."""
 
     batch_size: int = 256
     """Batch size for supervised diffusion policy training."""
@@ -185,6 +153,247 @@ class ModuleWrapper(DeterministicMixin, Model):
         return actions, outputs
 
 
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = x[:, None] * emb[None, :]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
+
+
+class Downsample1d(nn.Module):
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.conv = nn.Conv1d(dim, dim, 3, 2, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+class Upsample1d(nn.Module):
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.conv = nn.ConvTranspose1d(dim, dim, 4, 2, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+class Conv1dBlock(nn.Module):
+    def __init__(
+        self, inp_channels: int, out_channels: int, kernel_size: int, n_groups: int = 8
+    ) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv1d(
+                inp_channels, out_channels, kernel_size, padding=kernel_size // 2
+            ),
+            nn.GroupNorm(n_groups, out_channels),
+            nn.Mish(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class ConditionalResidualBlock1D(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        cond_dim: int,
+        kernel_size: int = 3,
+        n_groups: int = 8,
+    ) -> None:
+        super().__init__()
+        self.blocks = nn.ModuleList(
+            [
+                Conv1dBlock(in_channels, out_channels, kernel_size, n_groups=n_groups),
+                Conv1dBlock(out_channels, out_channels, kernel_size, n_groups=n_groups),
+            ]
+        )
+
+        cond_channels = out_channels * 2
+        self.out_channels = out_channels
+        self.cond_encoder = nn.Sequential(
+            nn.Mish(), nn.Linear(cond_dim, cond_channels), nn.Unflatten(-1, (-1, 1))
+        )
+
+        self.residual_conv = (
+            nn.Conv1d(in_channels, out_channels, 1)
+            if in_channels != out_channels
+            else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        out = self.blocks[0](x)
+        embed = self.cond_encoder(cond)
+        embed = embed.reshape(embed.shape[0], 2, self.out_channels, 1)
+        scale = embed[:, 0, ...]
+        bias = embed[:, 1, ...]
+        out = scale * out + bias
+        out = self.blocks[1](out)
+        out = out + self.residual_conv(x)
+        return out
+
+
+class ConditionalUnet1D(nn.Module):
+    def __init__(self, a_dim: int, o_dim: int, config: DP_CFG):
+        super().__init__()
+        self.config: DP_CFG = config
+
+        self._a_dim: int = a_dim
+        self._o_dim: int = o_dim
+        self._down_dims: list[int] = config.down_dims
+        self._diffusion_step_embed_dim: int = config.diffusion_step_embed_dim
+        self._global_cond_dim: int = self._o_dim * config.obs_horizon
+        self._kernel_size: int = config.kernel_size
+        self._n_groups: int = config.n_groups
+
+        all_dims = [self._a_dim] + list(self._down_dims)
+        start_dim = self._down_dims[0]
+
+        dsed = self._diffusion_step_embed_dim
+        diffusion_step_encoder = nn.Sequential(
+            SinusoidalPosEmb(dsed),
+            nn.Linear(dsed, dsed * 4),
+            nn.Mish(),
+            nn.Linear(dsed * 4, dsed),
+        )
+        cond_dim = dsed + self._global_cond_dim
+
+        in_out = list(zip(all_dims[:-1], all_dims[1:]))
+        mid_dim = all_dims[-1]
+
+        self.mid_modules = nn.ModuleList(
+            [
+                ConditionalResidualBlock1D(
+                    mid_dim,
+                    mid_dim,
+                    cond_dim=cond_dim,
+                    kernel_size=self._kernel_size,
+                    n_groups=self._n_groups,
+                ),
+                ConditionalResidualBlock1D(
+                    mid_dim,
+                    mid_dim,
+                    cond_dim=cond_dim,
+                    kernel_size=self._kernel_size,
+                    n_groups=self._n_groups,
+                ),
+            ]
+        )
+
+        down_modules = nn.ModuleList([])
+        for ind, (dim_in, dim_out) in enumerate(in_out):
+            is_last = ind >= (len(in_out) - 1)
+            down_modules.append(
+                nn.ModuleList(
+                    [
+                        ConditionalResidualBlock1D(
+                            dim_in,
+                            dim_out,
+                            cond_dim=cond_dim,
+                            kernel_size=self._kernel_size,
+                            n_groups=self._n_groups,
+                        ),
+                        ConditionalResidualBlock1D(
+                            dim_out,
+                            dim_out,
+                            cond_dim=cond_dim,
+                            kernel_size=self._kernel_size,
+                            n_groups=self._n_groups,
+                        ),
+                        Downsample1d(dim_out) if not is_last else nn.Identity(),
+                    ]
+                )
+            )
+
+        up_modules = nn.ModuleList([])
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
+            is_last = ind >= (len(in_out) - 1)
+            up_modules.append(
+                nn.ModuleList(
+                    [
+                        ConditionalResidualBlock1D(
+                            dim_out * 2,
+                            dim_in,
+                            cond_dim=cond_dim,
+                            kernel_size=self._kernel_size,
+                            n_groups=self._n_groups,
+                        ),
+                        ConditionalResidualBlock1D(
+                            dim_in,
+                            dim_in,
+                            cond_dim=cond_dim,
+                            kernel_size=self._kernel_size,
+                            n_groups=self._n_groups,
+                        ),
+                        Upsample1d(dim_in) if not is_last else nn.Identity(),
+                    ]
+                )
+            )
+
+        final_conv = nn.Sequential(
+            Conv1dBlock(start_dim, start_dim, kernel_size=self._kernel_size),
+            nn.Conv1d(start_dim, self._a_dim, 1),
+        )
+
+        self.diffusion_step_encoder = diffusion_step_encoder
+        self.down_modules = down_modules
+        self.up_modules = up_modules
+        self.final_conv = final_conv
+
+    def forward(
+        self,
+        actions: torch.Tensor,
+        timestep: Union[torch.Tensor, float, int],
+        global_cond=Optional[torch.Tensor],
+    ):
+        actions = actions.moveaxis(-1, -2)
+
+        if not torch.is_tensor(timestep):
+            timestep = torch.tensor([timestep], dtype=torch.long, device=actions.device)
+        elif torch.is_tensor(timestep) and len(timestep.shape) == 0:
+            timestep = timestep[None].to(actions.device)
+
+        timestep = timestep.expand(actions.shape[0])
+        global_feature = self.diffusion_step_encoder(timestep)
+
+        if global_cond is not None:
+            if not global_cond.is_cuda:
+                global_cond = global_cond.to(global_feature.device)
+            global_feature = torch.cat([global_feature, global_cond], axis=-1)
+
+        x = actions
+        h = []
+        for resnet, resnet2, downsample in self.down_modules:
+            x = resnet(x, global_feature)
+            x = resnet2(x, global_feature)
+            h.append(x)
+            x = downsample(x)
+
+        for mid_module in self.mid_modules:
+            x = mid_module(x, global_feature)
+
+        for resnet, resnet2, upsample in self.up_modules:
+            x = torch.cat((x, h.pop()), dim=1)
+            x = resnet(x, global_feature)
+            x = resnet2(x, global_feature)
+            x = upsample(x)
+
+        x = self.final_conv(x)
+        x = x.moveaxis(-1, -2)
+        return x
+
+
 class EMAModel:
     """Exponential Moving Average model wrapper."""
 
@@ -242,9 +451,6 @@ class DiffusionPolicy(Agent):
 
         # Load config values
         self._num_diffusion_iters: int = _config.num_diffusion_iters
-        self._num_inference_steps: int | None = getattr(
-            _config, "num_inference_steps", None
-        )
         self._beta_schedule: str = _config.beta_schedule
         self._clip_sample: bool = _config.clip_sample
         self._prediction_type: str = _config.prediction_type
@@ -274,16 +480,13 @@ class DiffusionPolicy(Agent):
             device=self.device,
         )
 
-        # Noise scheduler and framework-neutral sampling loop
-        scheduler_config = SchedulerConfig(
-            kind=getattr(_config, "scheduler_type", "ddpm"),
+        # Noise scheduler
+        self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=self._num_diffusion_iters,
             beta_schedule=self._beta_schedule,
             clip_sample=self._clip_sample,
             prediction_type=self._prediction_type,
         )
-        self.noise_scheduler = build_noise_scheduler(scheduler_config)
-        self.sampler = DiffusionSampler(self.noise_scheduler)
 
         # Optimizer + LR scheduler
         self.optimizer = None
@@ -300,32 +503,6 @@ class DiffusionPolicy(Agent):
 
         self.is_trained = False
         self.enable_training_mode(True)
-
-    @classmethod
-    def from_config(
-        cls,
-        *,
-        a_dim: int,
-        o_dim: int,
-        config: DP_CFG | None = None,
-        device: str = "cuda",
-        **kwargs: Any,
-    ) -> "DiffusionPolicy":
-        """Construct the configured backbone pair and skrl policy adapter."""
-
-        config = DP_CFG() if config is None else config
-        backbone = getattr(config, "backbone", "unet")
-        model = build_backbone(backbone, a_dim=a_dim, o_dim=o_dim, config=config)
-        ema_model = build_backbone(backbone, a_dim=a_dim, o_dim=o_dim, config=config)
-        return cls(
-            a_dim=a_dim,
-            o_dim=o_dim,
-            models={"model": model, "ema_model": ema_model},
-            ema=EMAModel(model.parameters(), power=config.ema_power),
-            device=device,
-            config=config,
-            **kwargs,
-        )
 
     def init(self, trainer_cfg: dict[str, Any] | None = None):
         self.enable_training_mode(True)
@@ -411,19 +588,13 @@ class DiffusionPolicy(Agent):
         timestep: int = 0,
         timesteps: int = 0,
         role: str = "policy",
-        num_inference_steps: int | None = None,
-        initial_action_chunk: torch.Tensor | None = None,
-        warm_start_mask: torch.Tensor | None = None,
-        warm_start_std: float | None = None,
-        generator: torch.Generator | None = None,
+        num_inference_steps=None,
         normalize_obs: Optional[bool] = None,
         unnormalize_act: Optional[bool] = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
-        """Generate action chunks using the configured diffusion scheduler.
+        """Generate actions using DDIM sampling
 
-        Observations have dimensions ``[num_envs, obs_horizon, o_dim]``. An
-        ``initial_action_chunk`` is interpreted in external (unnormalized) action
-        units and only applies to chronological online deployment.
+        expected dimensions [num_envs, obs_horizon, o_dim]
 
         """
 
@@ -456,10 +627,7 @@ class DiffusionPolicy(Agent):
             states = 2.0 * (states - min_val) / range_val - 1.0
 
         self.ema_model.eval()
-        if num_inference_steps is None:
-            num_inference_steps = self._num_inference_steps
-        if num_inference_steps is None:
-            num_inference_steps = self._num_diffusion_iters
+        num_inference_steps = num_inference_steps or self._num_diffusion_iters
 
         obs_cond = self.prepare_observation_condition(states)
 
@@ -468,68 +636,21 @@ class DiffusionPolicy(Agent):
             self._pred_horizon,
             self.model._unwrapped_module._a_dim,
         )
-        initial_sample = None
-        if initial_action_chunk is not None:
-            prior = torch.as_tensor(
-                initial_action_chunk, device=self.device, dtype=obs_cond.dtype
-            )
-            if tuple(prior.shape) != shape:
-                raise ValueError(
-                    f"initial_action_chunk has shape {tuple(prior.shape)}, "
-                    f"expected {shape}"
-                )
-            if self.stats is not None:
-                stats = self.stats["action"]
-                min_val = torch.as_tensor(
-                    stats["min"], device=prior.device, dtype=prior.dtype
-                )
-                max_val = torch.as_tensor(
-                    stats["max"], device=prior.device, dtype=prior.dtype
-                )
-                range_val = torch.where(
-                    max_val == min_val,
-                    torch.ones_like(max_val),
-                    max_val - min_val,
-                )
-                prior = 2.0 * (prior - min_val) / range_val - 1.0
+        noisy_actions = randn_tensor(shape, device=self.device)
 
-            std = (
-                getattr(self.config, "warm_start_std", 0.1)
-                if warm_start_std is None
-                else warm_start_std
-            )
-            if std < 0:
-                raise ValueError("warm_start_std must be non-negative")
-            noise = torch.randn(
-                shape,
-                device=self.device,
-                dtype=obs_cond.dtype,
-                generator=generator,
-            )
-            warm_sample = prior + std * noise
-            if warm_start_mask is None:
-                initial_sample = warm_sample
-            else:
-                mask = torch.as_tensor(
-                    warm_start_mask, device=self.device, dtype=torch.bool
-                )
-                if mask.shape != (shape[0],):
-                    raise ValueError(
-                        f"warm_start_mask has shape {tuple(mask.shape)}, "
-                        f"expected {(shape[0],)}"
-                    )
-                initial_sample = torch.where(mask[:, None, None], warm_sample, noise)
+        self.noise_scheduler.set_timesteps(num_inference_steps, device=self.device)
 
-        noisy_actions = self.sampler.sample(
-            self.ema_model._unwrapped_module,
-            shape=shape,
-            global_cond=obs_cond,
-            num_inference_steps=num_inference_steps,
-            initial_sample=initial_sample,
-            device=self.device,
-            dtype=obs_cond.dtype,
-            generator=generator,
-        )
+        for t in self.noise_scheduler.timesteps:
+            inputs = {
+                "actions": noisy_actions,
+                "timestep": t,
+                "global_cond": obs_cond,
+            }
+
+            noise_pred, _ = self.ema_model.act(inputs=inputs)
+            noisy_actions = self.noise_scheduler.step(
+                noise_pred, t, noisy_actions
+            ).prev_sample
 
         if self.stats is not None:
             do_unnormalize = unnormalize_act if unnormalize_act is not None else True
@@ -614,14 +735,11 @@ class DiffusionPolicy(Agent):
         if a_dim is None or o_dim is None:
             raise ValueError("Both action and observation dims must be provided.")
 
-        backbone = getattr(config, "backbone", "unet")
         dp_models = {}
-        dp_models["model"] = build_backbone(
-            backbone, a_dim=a_dim, o_dim=o_dim, config=config
-        )
+        dp_models["model"] = ConditionalUnet1D(a_dim=a_dim, o_dim=o_dim, config=config)
         ema = EMAModel(dp_models["model"].parameters(), power=config.ema_power)
-        dp_models["ema_model"] = build_backbone(
-            backbone, a_dim=a_dim, o_dim=o_dim, config=config
+        dp_models["ema_model"] = ConditionalUnet1D(
+            a_dim=a_dim, o_dim=o_dim, config=config
         )
 
         policy = cls(

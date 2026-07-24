@@ -52,8 +52,6 @@ from mjxsim.utils.datasets import split_dataset
 - `envs`: MuJoCo/Brax and Gym wrappers (MuJoCo/Brax require the `mujoco` extra).
 - `agents`: IBRL, PPO, BC, diffusion-policy, representation-learning, and
   latent-distillation agents built on SKRL/PyTorch.
-- `diffusion`: reusable UNet/Mamba denoisers, DDPM/DDIM sampling, and reset-safe
-  FastDP historical-action deployment tools.
 - `datasets`: Dataset utilities (PushT, attractor, state-only datasets).
 - `utils`: Helpers for env creation, dataset splitting, and data handling.
 - `cli`: Console entrypoints for training/evaluation.
@@ -80,38 +78,6 @@ distiller = LatentDistillerAgent(
     privileged_encoder=teacher.model,
 )
 ```
-
-## Fast diffusion-policy inference
-
-The Torch state diffusion agent supports configurable backbones and samplers:
-
-```python
-from mjxsim.agents import DP_CFG, DiffusionPolicy
-from mjxsim.diffusion import WarmStartDeployment
-
-cfg = DP_CFG(
-    backbone="unet",  # use "mamba" with the fast-diffusion extra
-    scheduler_type="ddim",
-    num_inference_steps=5,
-)
-policy = DiffusionPolicy.from_config(
-    a_dim=6,
-    o_dim=60,
-    config=cfg,
-)
-deployment = WarmStartDeployment(
-    policy,
-    num_envs=1,
-    pred_horizon=cfg.pred_horizon,
-    action_dim=6,
-    executed_steps=cfg.action_horizon,
-)
-```
-
-See [`mjxsim/diffusion/README.md`](mjxsim/diffusion/README.md) for training,
-vector-environment reset handling, and the optional Mamba installation. A
-download-free API example is available at
-[`examples/diffusion_policy_synthetic.py`](examples/diffusion_policy_synthetic.py).
 
 ## Notes
 - Optional modules such as `mujoco_playground`, `robots`, or `ctrl` are not bundled; they are used only by experimental files and can be installed separately if needed.
