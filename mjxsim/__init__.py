@@ -86,6 +86,7 @@ if TYPE_CHECKING:
 
 _SUBMODULE_EXPORTS = [
     "agents",
+    "diffusion",
     "models",
     "trainers",
     "utils",
@@ -153,6 +154,7 @@ _UTIL_EXPORTS = [
 
 _EXPORT_MODULES = {
     "agents": "mjxsim.agents",
+    "diffusion": "mjxsim.diffusion",
     "models": "mjxsim.models",
     "trainers": "mjxsim.trainers",
     "utils": "mjxsim.utils",
