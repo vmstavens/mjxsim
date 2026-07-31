@@ -73,4 +73,3 @@ class LatentDistillationTrainer:
             self.phase1_policy,
             self.adaptation_encoder,
         )
-

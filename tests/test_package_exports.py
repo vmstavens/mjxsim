@@ -13,6 +13,7 @@ def test_import_mjxsim_root() -> None:
     assert "DRLR_SAC_CFG" in mjxsim.__all__
     assert "DRLR_CFG" not in mjxsim.__all__
     assert "PushTStateDataset" in mjxsim.__all__
+    assert "rma" in mjxsim.__all__
     assert "pipe" in mjxsim.__all__
     assert "register" in mjxsim.__all__
     assert "set_state" in mjxsim.__all__
@@ -47,6 +48,12 @@ def test_namespaced_submodule_imports() -> None:
     assert set_state.__name__ == "set_state"
     assert cable.__name__ == "cable"
     assert pipe.__name__ == "pipe"
+
+
+def test_rma_namespace_is_public_and_lazy() -> None:
+    import mjxsim
+
+    assert mjxsim.rma.RmaSpec.__name__ == "RmaSpec"
 
 
 def test_utils_exports_register_lazily() -> None:

@@ -175,4 +175,3 @@ def make_drlr2_rma_models(*args, **kwargs) -> dict[str, Model]:
     """Backward-compatible alias for :func:`make_sac_rma_models`."""
 
     return make_sac_rma_models(*args, **kwargs)
-

@@ -133,9 +133,7 @@ class SequentialTrainerPlus(Trainer):
         self.rollout_video_dir = self.cfg.rollout_video_dir
         self.rollout_video_prefix = self.cfg.rollout_video_prefix
         self.rollout_video_env_index = int(self.cfg.rollout_video_env_index or 0)
-        self.rollout_video_count_all_envs = bool(
-            self.cfg.rollout_video_count_all_envs
-        )
+        self.rollout_video_count_all_envs = bool(self.cfg.rollout_video_count_all_envs)
         self.rollout_video_disable_tracking = bool(
             self.cfg.rollout_video_disable_tracking
         )
@@ -428,8 +426,7 @@ class SequentialTrainerPlus(Trainer):
 
             with torch.no_grad():
                 actions = _agent_act(
-                    self.agents,
-                    states, timestep=timestep, timesteps=self.cfg.timesteps
+                    self.agents, states, timestep=timestep, timesteps=self.cfg.timesteps
                 )[0]
                 next_states, rewards, terminated, truncated, infos = self.env.step(
                     actions
@@ -519,8 +516,7 @@ class SequentialTrainerPlus(Trainer):
 
             with torch.no_grad():
                 outputs = _agent_act(
-                    self.agents,
-                    states, timestep=timestep, timesteps=self.cfg.timesteps
+                    self.agents, states, timestep=timestep, timesteps=self.cfg.timesteps
                 )
                 actions = (
                     outputs[0]
@@ -646,7 +642,9 @@ class SequentialTrainerPlus(Trainer):
                     )
                     actions = _agent_act(
                         self.agents,
-                        states, timestep=step, timesteps=self.rollout_video_num_steps
+                        states,
+                        timestep=step,
+                        timesteps=self.rollout_video_num_steps,
                     )[0]
                     states, _, terminated, truncated, _ = rollout_env.step(actions)
                     _call_agent_method(
@@ -776,8 +774,7 @@ class SequentialTrainerPlus(Trainer):
 
             with torch.no_grad():
                 actions = _agent_act(
-                    self.agents,
-                    states, timestep=timestep, timesteps=self.cfg.timesteps
+                    self.agents, states, timestep=timestep, timesteps=self.cfg.timesteps
                 )[0]
 
                 next_states, rewards, terminated, truncated, infos = self.env.step(

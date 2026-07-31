@@ -90,8 +90,7 @@ def _coerce_cfg(cfg: DP_CFG | Mapping[str, Any] | None) -> DP_CFG:
             setattr(result, key, copy.deepcopy(value))
     else:
         raise TypeError(
-            "cfg must be a DP_CFG, mapping, or None "
-            f"(got {type(cfg).__name__})"
+            f"cfg must be a DP_CFG, mapping, or None (got {type(cfg).__name__})"
         )
     result.expand()
     return result
@@ -223,6 +222,10 @@ class DiffusionPolicy:
             weight_decay=self.config.weight_decay,
         )
         self.ema = EMAModel(self.params, power=self.config.ema_power)
+        self._sample_actions_jit = jax.jit(
+            self._sample_actions,
+            static_argnames=("num_steps",),
+        )
 
     @property
     def betas(self) -> jax.Array:
@@ -241,9 +244,7 @@ class DiffusionPolicy:
         obs, actions = self._get_batch_arrays(batch)
         if self.stats is not None:
             obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
-            actions = self._minmax_scale(
-                actions, self.stats["action"], inverse=False
-            )
+            actions = self._minmax_scale(actions, self.stats["action"], inverse=False)
         batch_size = actions.shape[0]
         rng_t, rng_noise = jax.random.split(rng)
         timesteps = jax.random.randint(
@@ -261,6 +262,39 @@ class DiffusionPolicy:
         pred = self.model.apply({"params": params}, noisy_actions, timesteps, obs)
         return jp.mean(jp.square(pred - noise))
 
+    def _sample_actions(
+        self,
+        params: Any,
+        obs: jax.Array,
+        rng: jax.Array,
+        *,
+        num_steps: int,
+    ) -> jax.Array:
+        """Sample an action plan in one compiled denoising program."""
+
+        batch_size = obs.shape[0]
+        actions = jax.random.normal(
+            rng,
+            (batch_size, self.config.pred_horizon, self.a_dim),
+        )
+        alphas_cumprod = self.alphas_cumprod
+
+        def denoise(index: int, current_actions: jax.Array) -> jax.Array:
+            timestep = num_steps - index - 1
+            timesteps = jp.full((batch_size,), timestep, dtype=jp.int32)
+            pred_noise = self.model.apply(
+                {"params": params},
+                current_actions,
+                timesteps,
+                obs,
+            )
+            alpha = alphas_cumprod[timestep]
+            return (current_actions - jp.sqrt(1.0 - alpha) * pred_noise) / jp.sqrt(
+                alpha
+            )
+
+        return jax.lax.fori_loop(0, num_steps, denoise, actions)
+
     def act(
         self,
         observations: Any,
@@ -276,22 +310,19 @@ class DiffusionPolicy:
         obs = self._as_obs_array(observations)
         if self.stats is not None and normalize_obs is not False:
             obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
-        batch_size = obs.shape[0]
         steps = self.config.num_diffusion_iters if num_steps is None else num_steps
-        actions = jax.random.normal(
-            rng,
-            (batch_size, self.config.pred_horizon, self.a_dim),
-        )
-
-        for timestep in reversed(range(steps)):
-            t = jp.full((batch_size,), timestep, dtype=jp.int32)
-            pred_noise = self.model.apply(variables, actions, t, obs)
-            alpha = self.alphas_cumprod[timestep]
-            actions = (actions - jp.sqrt(1.0 - alpha) * pred_noise) / jp.sqrt(alpha)
-        if self.stats is not None and unnormalize_act is not False:
-            actions = self._minmax_scale(
-                actions, self.stats["action"], inverse=True
+        if not 0 <= steps <= self.config.num_diffusion_iters:
+            raise ValueError(
+                "num_steps must be between 0 and configured num_diffusion_iters"
             )
+        actions = self._sample_actions_jit(
+            variables["params"],
+            obs,
+            rng,
+            num_steps=steps,
+        )
+        if self.stats is not None and unnormalize_act is not False:
+            actions = self._minmax_scale(actions, self.stats["action"], inverse=True)
         return actions
 
     def state_dict(self) -> dict[str, Any]:
@@ -352,7 +383,9 @@ class DiffusionPolicy:
         self.stats = result
 
     @staticmethod
-    def compute_stats(observations: Any, actions: Any) -> dict[str, dict[str, jax.Array]]:
+    def compute_stats(
+        observations: Any, actions: Any
+    ) -> dict[str, dict[str, jax.Array]]:
         """Compute min/max normalization statistics from a training split."""
         observations = jp.asarray(observations, dtype=jp.float32)
         actions = jp.asarray(actions, dtype=jp.float32)

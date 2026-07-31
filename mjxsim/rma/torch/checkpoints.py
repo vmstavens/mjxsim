@@ -73,9 +73,7 @@ def load_phase1_policy(
         device,
         spec,
         hidden_dims=tuple(architecture.get("actor_hidden_dims", (256, 256))),
-        encoder_hidden_dims=tuple(
-            architecture.get("encoder_hidden_dims", (128, 128))
-        ),
+        encoder_hidden_dims=tuple(architecture.get("encoder_hidden_dims", (128, 128))),
     ).to(device)
     policy.load_state_dict(checkpoint["policy_state_dict"])
     details = {
@@ -84,4 +82,3 @@ def load_phase1_policy(
         "metadata": checkpoint.get("metadata", {}),
     }
     return policy, details
-

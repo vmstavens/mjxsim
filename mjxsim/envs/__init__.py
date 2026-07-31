@@ -7,12 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mjxsim.envs.mocap_control import MocapReach  # noqa: F401
-    from mjxsim.envs.pipe_insert_2 import PipeInsert2  # noqa: F401
     from mjxsim.envs.pushert import PushTEnv  # noqa: F401
 
 _EXPORT_MODULES = {
     "MocapReach": "mjxsim.envs.mocap_control",
-    "PipeInsert2": "mjxsim.envs.pipe_insert_2",
     "PushTEnv": "mjxsim.envs.pushert",
 }
 

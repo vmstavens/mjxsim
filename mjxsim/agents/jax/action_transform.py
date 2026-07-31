@@ -26,7 +26,9 @@ class ActionTransform:
         if not bool(jnp.all(jnp.isfinite(low)) and jnp.all(jnp.isfinite(high))):
             raise ValueError("Action-space bounds must be finite")
         if not bool(jnp.all(high > low)):
-            raise ValueError("Every action-space upper bound must exceed its lower bound")
+            raise ValueError(
+                "Every action-space upper bound must exceed its lower bound"
+            )
         return cls(low=low, high=high)
 
     @property
@@ -49,7 +51,9 @@ class ActionTransform:
         actions = jnp.asarray(actions)
         if not bool(jnp.all(jnp.isfinite(actions))):
             raise ValueError("Actions contain non-finite values")
-        if not bool(jnp.all(actions >= -1.0 - tolerance) and jnp.all(actions <= 1.0 + tolerance)):
+        if not bool(
+            jnp.all(actions >= -1.0 - tolerance) and jnp.all(actions <= 1.0 + tolerance)
+        ):
             raise ValueError("Expected normalized actions in [-1, 1]")
 
 

@@ -26,6 +26,13 @@ if TYPE_CHECKING:
         DRLR_SAC_CFG,
         DRLR_SAC_DEFAULT_CONFIG,
     )
+    from mjxsim.agents.drlr_td3 import (  # noqa: F401
+        DRLR as DRLRTD3,
+    )
+    from mjxsim.agents.drlr_td3 import (  # noqa: F401
+        DRLR_TD3_CFG,
+        DRLR_TD3_DEFAULT_CONFIG,
+    )
     from mjxsim.agents.drlr2_sac import (  # noqa: F401
         DRLR2,
         DRLR2_SAC_CFG,
@@ -41,6 +48,11 @@ if TYPE_CHECKING:
     )
     from mjxsim.agents.ibrl_base_agent import Agent  # noqa: F401
     from mjxsim.agents.ibrl_sac import IBRL, IBRL_SAC_CFG  # noqa: F401
+    from mjxsim.agents.ibrl_td3 import IBRL as IBRLTD3  # noqa: F401
+    from mjxsim.agents.ibrl_td3 import (  # noqa: F401
+        IBRL_TD3_CFG,
+        IBRL_TD3_DEFAULT_CONFIG,
+    )
     from mjxsim.agents.autoencoder import (  # noqa: F401
         AE_CFG,
         AE_DEFAULT_CONFIG,
@@ -65,6 +77,8 @@ if TYPE_CHECKING:
     )
     from mjxsim.trainers.sequential_trainer_plus import SequentialTrainerPlus  # noqa: F401
     from mjxsim.trainers.supervised_trainer import SupervisedTrainer  # noqa: F401
+    from mjxsim.datasets.pushert import PushTStateDataset  # noqa: F401
+    from mjxsim.envs.pushert import PushTEnv  # noqa: F401
     from mjxsim.utils.datahandler import DataHandler  # noqa: F401
     from mjxsim.utils.datasets import split_dataset  # noqa: F401
     from mjxsim.utils.load import (  # noqa: F401
@@ -86,7 +100,10 @@ if TYPE_CHECKING:
 
 _SUBMODULE_EXPORTS = [
     "agents",
+    "datasets",
+    "envs",
     "models",
+    "rma",
     "trainers",
     "utils",
 ]
@@ -104,6 +121,9 @@ _AGENT_EXPORTS = [
     "DRLR",
     "DRLR_SAC_CFG",
     "DRLR_SAC_DEFAULT_CONFIG",
+    "DRLRTD3",
+    "DRLR_TD3_CFG",
+    "DRLR_TD3_DEFAULT_CONFIG",
     "DRLR2",
     "DRLR2_SAC_CFG",
     "DRLR2_SAC_DEFAULT_CONFIG",
@@ -115,6 +135,9 @@ _AGENT_EXPORTS = [
     "GraphRegressionGCN",
     "IBRL",
     "IBRL_SAC_CFG",
+    "IBRLTD3",
+    "IBRL_TD3_CFG",
+    "IBRL_TD3_DEFAULT_CONFIG",
     "LATENT_DISTILLER_CFG",
     "LATENT_DISTILLER_DEFAULT_CONFIG",
     "LatentDistillerAgent",
@@ -129,6 +152,8 @@ _AGENT_EXPORTS = [
     "VariationalAutoencoderVisionAgent",
     "VISION_DP_CFG",
     "normalized_chain_adjacency",
+    "PushTStateDataset",
+    "PushTEnv",
 ]
 
 _TRAINER_EXPORTS = ["SequentialTrainerPlus", "SupervisedTrainer"]
@@ -153,7 +178,10 @@ _UTIL_EXPORTS = [
 
 _EXPORT_MODULES = {
     "agents": "mjxsim.agents",
+    "datasets": "mjxsim.datasets",
+    "envs": "mjxsim.envs",
     "models": "mjxsim.models",
+    "rma": "mjxsim.rma",
     "trainers": "mjxsim.trainers",
     "utils": "mjxsim.utils",
     "AE_CFG": "mjxsim.agents.autoencoder",
@@ -168,6 +196,9 @@ _EXPORT_MODULES = {
     "DRLR": "mjxsim.agents.drlr_sac",
     "DRLR_SAC_CFG": "mjxsim.agents.drlr_sac",
     "DRLR_SAC_DEFAULT_CONFIG": "mjxsim.agents.drlr_sac",
+    "DRLRTD3": "mjxsim.agents.torch",
+    "DRLR_TD3_CFG": "mjxsim.agents.drlr_td3",
+    "DRLR_TD3_DEFAULT_CONFIG": "mjxsim.agents.drlr_td3",
     "DRLR2": "mjxsim.agents.drlr2_sac",
     "DRLR2_SAC_CFG": "mjxsim.agents.drlr2_sac",
     "DRLR2_SAC_DEFAULT_CONFIG": "mjxsim.agents.drlr2_sac",
@@ -179,6 +210,9 @@ _EXPORT_MODULES = {
     "GraphRegressionGCN": "mjxsim.agents.gnn",
     "IBRL": "mjxsim.agents.ibrl_sac",
     "IBRL_SAC_CFG": "mjxsim.agents.ibrl_sac",
+    "IBRLTD3": "mjxsim.agents.torch",
+    "IBRL_TD3_CFG": "mjxsim.agents.ibrl_td3",
+    "IBRL_TD3_DEFAULT_CONFIG": "mjxsim.agents.ibrl_td3",
     "LATENT_DISTILLER_CFG": "mjxsim.agents.latent_distiller",
     "LATENT_DISTILLER_DEFAULT_CONFIG": "mjxsim.agents.latent_distiller",
     "LatentDistillerAgent": "mjxsim.agents.latent_distiller",
@@ -193,6 +227,8 @@ _EXPORT_MODULES = {
     "VariationalAutoencoderVisionAgent": "mjxsim.agents.variational_autoencoder",
     "VISION_DP_CFG": "mjxsim.agents.diffusion_policy_vision",
     "normalized_chain_adjacency": "mjxsim.agents.gnn",
+    "PushTStateDataset": "mjxsim.datasets.pushert",
+    "PushTEnv": "mjxsim.envs.pushert",
     "SequentialTrainerPlus": "mjxsim.trainers.sequential_trainer_plus",
     "SupervisedTrainer": "mjxsim.trainers.supervised_trainer",
     "DataHandler": "mjxsim.utils.datahandler",
@@ -221,7 +257,11 @@ _OPTIONAL_DEPENDENCIES = {
     "DRLR2": "skrl",
     "GNNAgent": "torch",
     "IBRL": "skrl",
+    "IBRLTD3": "skrl",
+    "DRLRTD3": "skrl",
     "LatentDistillerAgent": "torch",
+    "PushTStateDataset": "torch",
+    "PushTEnv": "gymnasium",
     "VariationalAutoencoder": "torch",
     "VariationalAutoencoderAgent": "skrl",
     "VariationalAutoencoderState": "torch",

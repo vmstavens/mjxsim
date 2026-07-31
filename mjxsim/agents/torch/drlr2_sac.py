@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from packaging import version
-from skrl import config, logger
+from skrl import config
 
 # from skrl import config, logger
 # from algorithms.IBRLbase import Agent
@@ -551,9 +551,13 @@ class DRLR2(Agent):
         if self._ema_actions is None or self._ema_action_valid is None:
             return
 
-        done = (terminated | truncated).view(-1, 1).to(
-            device=self._ema_action_valid.device,
-            dtype=torch.bool,
+        done = (
+            (terminated | truncated)
+            .view(-1, 1)
+            .to(
+                device=self._ema_action_valid.device,
+                dtype=torch.bool,
+            )
         )
         if done.shape[0] != self._ema_action_valid.shape[0]:
             self._ema_actions = None

@@ -63,8 +63,7 @@ def _coerce_cfg(cfg: AE_CFG | Mapping[str, Any] | None) -> AE_CFG:
             setattr(result, key, copy.deepcopy(value))
     else:
         raise TypeError(
-            "cfg must be an AE_CFG, mapping, or None "
-            f"(got {type(cfg).__name__})"
+            f"cfg must be an AE_CFG, mapping, or None (got {type(cfg).__name__})"
         )
     result.expand()
     return result

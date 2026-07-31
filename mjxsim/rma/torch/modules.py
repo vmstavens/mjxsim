@@ -95,4 +95,3 @@ class ConditionedActor(nn.Module):
         return torch.tanh(
             self.network(torch.cat([observation, previous_action, latent], dim=-1))
         )
-

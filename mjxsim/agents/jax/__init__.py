@@ -13,16 +13,6 @@ from mjxsim.agents.jax.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
-from mjxsim.agents.jax.diffusion_policy_vision import (
-    DIFFUSION_POLICY_VISION_DEFAULT_CONFIG,
-    VISION_DP_CFG,
-    DiffusionPolicyVision,
-)
-from mjxsim.agents.jax.drlr_sac import (
-    DRLR,
-    DRLR_SAC_CFG,
-    DRLR_SAC_DEFAULT_CONFIG,
-)
 from mjxsim.agents.jax.drlr2_sac import (
     DRLR2,
     DRLR2_SAC_CFG,
@@ -42,11 +32,6 @@ from mjxsim.agents.jax.gnn import (
     GraphRegressionGCN,
     normalized_chain_adjacency,
 )
-from mjxsim.agents.jax.ibrl_sac import (
-    IBRL,
-    IBRL_SAC_CFG,
-    IBRL_SAC_DEFAULT_CONFIG,
-)
 
 __all__ = [
     "AE_CFG",
@@ -56,17 +41,12 @@ __all__ = [
     "ActionTransform",
     "ConditionalUnet1D",
     "DIFFUSION_POLICY_STATE_DEFAULT_CONFIG",
-    "DIFFUSION_POLICY_VISION_DEFAULT_CONFIG",
     "DP_CFG",
-    "DRLR",
     "DRLR2",
     "DRLR2_SAC_CFG",
     "DRLR2_SAC_DEFAULT_CONFIG",
-    "DRLR_SAC_CFG",
-    "DRLR_SAC_DEFAULT_CONFIG",
     "DiffusionPolicy",
     "DiffusionPolicyAdapter",
-    "DiffusionPolicyVision",
     "EMAModel",
     "FrozenActorPolicyAdapter",
     "GaussianActor",
@@ -75,13 +55,9 @@ __all__ = [
     "GNNAgent",
     "GraphConvolution",
     "GraphRegressionGCN",
-    "IBRL",
-    "IBRL_SAC_CFG",
-    "IBRL_SAC_DEFAULT_CONFIG",
     "JaxDRLR2",
     "JaxDRLR2Config",
     "QCritic",
-    "VISION_DP_CFG",
     "normalized_chain_adjacency",
     "make_sac_models",
 ]

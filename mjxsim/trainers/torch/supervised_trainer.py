@@ -24,6 +24,7 @@ from mjxsim.agents.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -242,10 +243,7 @@ class SupervisedTrainer:
             self.agent.track_data("Training / Loss", avg_loss)
 
             val_loss = None
-            if (
-                self.valid_loader is not None
-                and epoch % self.eval_frequency == 0
-            ):
+            if self.valid_loader is not None and epoch % self.eval_frequency == 0:
                 val_loss = self._validate()
                 self.agent.track_data("Validation / Loss", val_loss)
                 if self._callback_fn:

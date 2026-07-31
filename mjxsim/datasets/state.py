@@ -1,14 +1,11 @@
-import json
 import logging
 import os
 import pickle
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import torch
-from PIL import Image
 from torch.utils.data import Dataset
 
 from mjxsim.utils.datasets import load_data_files

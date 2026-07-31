@@ -57,6 +57,7 @@ class DRLR2_SAC_CFG(SAC_CFG):
     a_min_lim: list[float] = dataclasses.field(default_factory=list)
     a_max_lim: list[float] = dataclasses.field(default_factory=list)
     action_ema_alpha: float = 1.0
+    batch_il_queries: bool = False
 
     def expand(self) -> None:
         if self.actor not in {"rl", "il", "both"}:
@@ -315,25 +316,39 @@ class DRLR2(SAC):
             "states": self._state_preprocessor(rl_obs),
         }
         rl_actions, outputs = self.policy.act(inputs, role="policy")
-        il_eval, _ = self.IL_policy.act(
-            {"observations": exp_obs, "states": exp_obs},
-            role="policy",
-            unnormalize_act=False,
-        )
-        il_eval = il_eval[:, 0, :]
+        if self.cfg.batch_il_queries and exp_obs.shape[1:] == il_obs.shape[1:]:
+            expert_batch_size = exp_obs.shape[0]
+            combined_obs = jnp.concatenate((exp_obs, il_obs), axis=0)
+            combined_actions, _ = self.IL_policy.act(
+                {"observations": combined_obs, "states": combined_obs},
+                role="policy",
+                unnormalize_act=False,
+            )
+            il_eval = combined_actions[:expert_batch_size, 0, :]
+            il_actions = self._unnormalize_action(
+                combined_actions[expert_batch_size:, 0, :]
+            )
+        else:
+            il_eval, _ = self.IL_policy.act(
+                {"observations": exp_obs, "states": exp_obs},
+                role="policy",
+                unnormalize_act=False,
+            )
+            il_eval = il_eval[:, 0, :]
+            il_actions, _ = self.IL_policy.act(
+                {"observations": il_obs, "states": il_obs},
+                role="policy",
+                unnormalize_act=True,
+            )
+            il_actions = il_actions[:, 0, :]
         exp_flat = exp_obs[:, 0, :] if exp_obs.ndim == 3 else exp_obs
         q_il = self._compute_min_q_values(self._state_preprocessor(exp_flat), il_eval)
         q_rl = self._compute_min_q_values(self._state_preprocessor(rl_obs), rl_actions)
         use_il = jnp.mean(q_il) > jnp.mean(q_rl)
-        il_actions, _ = self.IL_policy.act(
-            {"observations": il_obs, "states": il_obs},
-            role="policy",
-            unnormalize_act=True,
-        )
         env_rl_actions = self._unnormalize_action(rl_actions)
         if smooth_rl_action:
             env_rl_actions = self._smooth_action_ema(env_rl_actions)
-        actions = jnp.where(use_il, il_actions[:, 0, :], env_rl_actions)
+        actions = jnp.where(use_il, il_actions, env_rl_actions)
         return actions, outputs.get("log_prob") if target else None, outputs
 
     def act(self, observations, states=None, *, timestep, timesteps):
@@ -501,8 +516,12 @@ class DRLR2(SAC):
                     grad=entropy_grad, model=self.log_entropy_coefficient
                 )
                 self._entropy_coefficient = jnp.exp(self.log_entropy_coefficient.value)
-            self.target_critic_1.update_parameters(self.critic_1, polyak=self.cfg.polyak)
-            self.target_critic_2.update_parameters(self.critic_2, polyak=self.cfg.polyak)
+            self.target_critic_1.update_parameters(
+                self.critic_1, polyak=self.cfg.polyak
+            )
+            self.target_critic_2.update_parameters(
+                self.critic_2, polyak=self.cfg.polyak
+            )
             if self.policy_scheduler:
                 self.policy_learning_rate *= self.policy_scheduler(timestep)
             if self.critic_scheduler:

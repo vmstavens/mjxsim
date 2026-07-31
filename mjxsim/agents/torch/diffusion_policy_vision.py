@@ -227,9 +227,7 @@ class ResNetEncoder(nn.Module):
     def __init__(self, layers: tuple[int, int, int, int] = (2, 2, 2, 2)) -> None:
         super().__init__()
         self.in_channels = 64
-        self.conv1 = nn.Conv2d(
-            3, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.gn1 = nn.GroupNorm(_num_groups(64), 64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -511,7 +509,9 @@ class VisionDiffusionModel(nn.Module):
         self.vision_encoder = get_resnet(config.vision_encoder)
         self.noise_pred_net = ConditionalUnet1D(config)
 
-    def encode_obs(self, images: torch.Tensor, lowdim_obs: torch.Tensor) -> torch.Tensor:
+    def encode_obs(
+        self, images: torch.Tensor, lowdim_obs: torch.Tensor
+    ) -> torch.Tensor:
         images = _format_images(images)
         batch_size = images.shape[0]
         seq_len = images.shape[1]
@@ -722,7 +722,9 @@ class DiffusionPolicyVision(Agent):
         lowdim_obs = _batch_value(batch, "agent_pos", "lowdim_obs", "states")
 
         images = torch.as_tensor(images, device=self.device)
-        lowdim_obs = torch.as_tensor(lowdim_obs, device=self.device, dtype=torch.float32)
+        lowdim_obs = torch.as_tensor(
+            lowdim_obs, device=self.device, dtype=torch.float32
+        )
         actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
 
         obs_cond = self.prepare_observation_condition(images, lowdim_obs)
@@ -772,7 +774,9 @@ class DiffusionPolicyVision(Agent):
         images = _batch_value(states, "pixels", "image", "images")
         lowdim_obs = _batch_value(states, "agent_pos", "lowdim_obs", "states")
         images = torch.as_tensor(images, device=self.device)
-        lowdim_obs = torch.as_tensor(lowdim_obs, device=self.device, dtype=torch.float32)
+        lowdim_obs = torch.as_tensor(
+            lowdim_obs, device=self.device, dtype=torch.float32
+        )
 
         self.ema_model.eval()
         num_inference_steps = num_inference_steps or self._num_diffusion_iters

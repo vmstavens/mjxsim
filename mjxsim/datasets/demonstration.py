@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -191,11 +190,8 @@ class DemonstrationDataset(Dataset):
         Returns list of tuples: (episode_idx, start_idx, end_idx, sample_start, sample_end)
         """
         indices = []
-        total_length = episode_ends[-1] if len(episode_ends) > 0 else 0
-
         for episode_idx, episode in enumerate(self.episodes):
             episode_start = episode_ends[episode_idx - 1] if episode_idx > 0 else 0
-            episode_end = episode_ends[episode_idx]
             episode_length = episode["length"]
 
             # Calculate valid start positions within this episode

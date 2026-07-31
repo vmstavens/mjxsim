@@ -64,15 +64,27 @@ def load_expert_memory(
     """
     states = _array(transitions, "states")
     next_states = _array(transitions, "next_states")
-    observations = jnp.asarray(transitions.get("observations", states), dtype=jnp.float32)
+    observations = jnp.asarray(
+        transitions.get("observations", states), dtype=jnp.float32
+    )
     next_observations = jnp.asarray(
         transitions.get("next_observations", next_states), dtype=jnp.float32
     )
     actions = _array(transitions, "actions")
     rewards = _array(transitions, "rewards").reshape(-1, 1)
-    terminated = jnp.asarray(transitions.get("terminated", jnp.zeros((states.shape[0], 1))), dtype=jnp.int8).reshape(-1, 1)
+    terminated = jnp.asarray(
+        transitions.get("terminated", jnp.zeros((states.shape[0], 1))), dtype=jnp.int8
+    ).reshape(-1, 1)
     count = states.shape[0]
-    arrays = (states, next_states, observations, next_observations, actions, rewards, terminated)
+    arrays = (
+        states,
+        next_states,
+        observations,
+        next_observations,
+        actions,
+        rewards,
+        terminated,
+    )
     if count == 0 or any(value.shape[0] != count for value in arrays):
         raise ValueError("Transition arrays must be non-empty and have equal lengths")
     if not all(bool(jnp.all(jnp.isfinite(value))) for value in arrays[:-1]):

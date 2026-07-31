@@ -1,43 +1,52 @@
-# IBRL overview
+# IBRL and DRLR agents
 
-This repository packages two related agents built on SKRL and MuJoCo:
+`mjxsim.agents` exposes imitation-bootstrapped agents with SAC and TD3
+backbones:
 
-- **IBRL (SAC)**: a soft actor-critic agent with optional imitation guidance. If no imitation policy is provided, it behaves like SAC.
-- **IBRL + Diffusion Policy (`ibrl_sac_o_o2.py`)**: the SAC agent is conditioned by a diffusion-policy prior trained on demonstrations (PushT by default).
+| Algorithm | SAC | TD3 |
+| --- | --- | --- |
+| Per-sample RL/IL selection | `IBRL` | `IBRLTD3` |
+| Batch-level RL/IL selection | `DRLR` | `DRLRTD3` |
 
-Both agents share the same policy/critic backbones (`agents.models.ibrl_sac`) and logging/checkpointing API.
+All variants use a trainable RL policy, a frozen imitation policy, twin critics,
+online replay, and optional demonstration replay. The critics compare RL and
+imitation candidate actions. IBRL selects per sample, while DRLR can make one
+decision for the whole vector-environment batch.
 
-## Training flows
+## Imports
 
-- **Baseline IBRL**: `mjx-sim-train-ibrl --env-id Ant-v4 --timesteps 100000`
-  - Uses Gymnasium MuJoCo tasks, wraps them with SKRL, and trains SAC with replay memory.
-  - Checkpoints and TensorBoard logs are stored under `runs/ibrl/<env>/`.
-  - Evaluate with `mjx-sim-eval-ibrl --env-id Ant-v4 --checkpoint <path> --render`.
+```python
+from mjxsim.agents import (
+    DRLR,
+    DRLRTD3,
+    DRLR_SAC_CFG,
+    DRLR_TD3_CFG,
+    IBRL,
+    IBRLTD3,
+    IBRL_SAC_CFG,
+    IBRL_TD3_CFG,
+)
+```
 
-- **Diffusion-conditioned IBRL**: `mjx-sim-train-ibrl-diffusion --timesteps 50000`
-  - Downloads the PushT demonstration dataset (or use `--dataset <zip>`).
-  - Trains a diffusion policy (state-only) via supervised learning.
-  - Fine-tunes the SAC agent while using the diffusion policy as an imitation prior.
-  - Evaluate with `mjx-sim-eval-ibrl-diffusion --checkpoint <path> --render` (optionally add `--diffusion-checkpoint` to load the IL prior).
+The agents build on SKRL. Applications provide the SKRL policy/critic model
+dictionaries, online and expert memories, spaces, and an imitation policy under
+the `models_il["policy"]` key.
 
-## Key configuration knobs
+For TD3, `models` must contain:
 
-- `IBRL_SAC_DEFAULT_CONFIG` and `SAC_DEFAULT_CONFIG` in `agents.ibrl_sac(_o_o2)`:
-  - `batch_size`, `learning_rate`s, `polyak`, `discount_factor`
-  - `experiment` block controls logging/checkpoint cadence and output directory
-  - `offline` and `BC` flags enable loading expert demonstrations into replay buffers
-- Diffusion policy config (`DIFFUSION_POLICY_STATE_DEFAULT_CONFIG`):
-  - `pred_horizon`, `obs_horizon`, `action_horizon` control the denoising window
-  - `ema_power`, `num_diffusion_iters`, `learning_rate`, `num_workers` for training
+- `policy` and `target_policy`;
+- `critic_1`, `critic_2`, `target_critic_1`, and `target_critic_2`.
 
-## Working with your own tasks
+The imitation policy receives a two-observation history with shape
+`[batch, 2, observation_dim]`. It may return either one action per sample or an
+action plan; for a plan, the agent executes the first action. Imitation actions
+must already use the environment action coordinates.
 
-1. Provide a Gymnasium-compatible environment (observation and action spaces must be Box).
-2. Use `utils.envs.mk_env` if you need to wrap MuJoCo/Brax tasks consistently.
-3. Swap datasets by creating a `torch.utils.data.Dataset` that yields `(obs, action)` sequences and pointing the diffusion CLI to it.
+Important TD3 options include `warmup_timesteps`, `actor`,
+`expert_batch_ratio`, and `action_ema_alpha`. `DRLR_TD3_CFG` additionally
+provides `decision_block`, `il_ctrl_scale`, and `rl_ctrl_scale`.
 
-## Checkpoints and packaging
-
-- Installing the repo (`pip install -e .`) exposes the CLI entrypoints listed above.
-- Checkpoints are written under the `experiment.directory` configured in each script (defaults to `runs/`).
-- To reuse the agents in another project: `from agents.ibrl_sac import IBRL, SAC_DEFAULT_CONFIG` and build models with `agents.models.ibrl_sac`.
+This repository intentionally provides reusable package components rather than
+task-specific training command-line programs. Environment construction,
+demonstration loading, and training entry points belong in the consuming
+project.

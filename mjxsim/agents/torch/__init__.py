@@ -23,6 +23,13 @@ from mjxsim.agents.torch.drlr_sac import (
     DRLR_SAC_CFG,
     DRLR_SAC_DEFAULT_CONFIG,
 )
+from mjxsim.agents.torch.drlr_td3 import (
+    DRLR as DRLRTD3,
+)
+from mjxsim.agents.torch.drlr_td3 import (
+    DRLR_TD3_CFG,
+    DRLR_TD3_DEFAULT_CONFIG,
+)
 from mjxsim.agents.torch.drlr2_sac import (
     DRLR2,
     DRLR2_SAC_CFG,
@@ -42,6 +49,13 @@ from mjxsim.agents.torch.ibrl_sac import (
     IBRL_SAC_CFG,
     IBRL_SAC_DEFAULT_CONFIG,
 )
+from mjxsim.agents.torch.ibrl_td3 import (
+    IBRL as IBRLTD3,
+)
+from mjxsim.agents.torch.ibrl_td3 import (
+    IBRL_TD3_CFG,
+    IBRL_TD3_DEFAULT_CONFIG,
+)
 
 __all__ = [
     "AE_CFG",
@@ -59,6 +73,9 @@ __all__ = [
     "DRLR2_SAC_DEFAULT_CONFIG",
     "DRLR_SAC_CFG",
     "DRLR_SAC_DEFAULT_CONFIG",
+    "DRLRTD3",
+    "DRLR_TD3_CFG",
+    "DRLR_TD3_DEFAULT_CONFIG",
     "DiffusionPolicy",
     "DiffusionPolicyVision",
     "EMAModel",
@@ -70,6 +87,9 @@ __all__ = [
     "IBRL",
     "IBRL_SAC_CFG",
     "IBRL_SAC_DEFAULT_CONFIG",
+    "IBRLTD3",
+    "IBRL_TD3_CFG",
+    "IBRL_TD3_DEFAULT_CONFIG",
     "VISION_DP_CFG",
     "normalized_chain_adjacency",
 ]

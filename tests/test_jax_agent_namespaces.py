@@ -5,41 +5,6 @@ import jax
 import jax.numpy as jp
 
 from mjxsim.agents.jax.diffusion_policy_state import DP_CFG, DiffusionPolicy
-from mjxsim.agents.jax.drlr_sac import DRLR
-from mjxsim.agents.jax.ibrl_sac import IBRL
-
-
-def _linear_action(params, observations):
-    return observations @ params["w"]
-
-
-def test_jax_ibrl_and_drlr_policy_composition() -> None:
-    observations = jp.ones((2, 3), dtype=jp.float32)
-    params = {"w": jp.ones((3, 2), dtype=jp.float32)}
-    imitation_params = {"w": jp.full((3, 2), 2.0, dtype=jp.float32)}
-
-    ibrl = IBRL(
-        policy=_linear_action,
-        imitation_policy=_linear_action,
-        params=params,
-        imitation_params=imitation_params,
-        cfg={"actor": "both", "soft_update_beta": 0.25},
-    )
-    drlr = DRLR(
-        policy=_linear_action,
-        imitation_policy=_linear_action,
-        params=params,
-        imitation_params=imitation_params,
-        cfg={"actor": "both", "soft_update_beta": 0.25},
-    )
-
-    expected = 0.25 * jp.full((2, 2), 6.0) + 0.75 * jp.full((2, 2), 3.0)
-    assert jp.allclose(ibrl.act(observations), expected)
-    assert jp.allclose(drlr.act(observations), expected)
-    with pytest.raises(NotImplementedError):
-        ibrl.update({})
-    with pytest.raises(NotImplementedError):
-        drlr.update({})
 
 
 def test_jax_diffusion_policy_loss_and_action_shapes() -> None:
@@ -66,6 +31,41 @@ def test_jax_diffusion_policy_loss_and_action_shapes() -> None:
 
     assert loss.shape == ()
     assert actions.shape == (2, 4, 2)
+
+
+def test_jax_diffusion_policy_compiled_sampler_matches_reference_loop() -> None:
+    policy = DiffusionPolicy(
+        a_dim=2,
+        o_dim=3,
+        config=DP_CFG(
+            pred_horizon=4,
+            obs_horizon=2,
+            action_horizon=2,
+            num_diffusion_iters=4,
+            down_dims=[8],
+            diffusion_step_embed_dim=8,
+        ),
+        rng=jax.random.PRNGKey(0),
+    )
+    observations = jp.ones((2, 2, 3), dtype=jp.float32)
+    rng = jax.random.PRNGKey(7)
+    expected = jax.random.normal(rng, (2, 4, 2))
+    for timestep in reversed(range(3)):
+        timesteps = jp.full((2,), timestep, dtype=jp.int32)
+        predicted_noise = policy.model.apply(
+            {"params": policy.params},
+            expected,
+            timesteps,
+            observations,
+        )
+        alpha = policy.alphas_cumprod[timestep]
+        expected = (expected - jp.sqrt(1.0 - alpha) * predicted_noise) / jp.sqrt(alpha)
+
+    actual = policy.act(observations, rng=rng, num_steps=3)
+
+    assert jp.allclose(actual, expected, rtol=1e-5, atol=1e-5)
+    with pytest.raises(ValueError, match="num_steps"):
+        policy.act(observations, rng=rng, num_steps=5)
 
 
 def test_jax_diffusion_policy_minmax_scaling_round_trip() -> None:

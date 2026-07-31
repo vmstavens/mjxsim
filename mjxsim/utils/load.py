@@ -31,8 +31,8 @@ def _playground_registry():
     except ImportError as exc:
         msg = (
             "mjxsim.utils.load.register requires the MuJoCo Playground dependencies. "
-            "Install them with `uv add \"/path/to/mjxsim[mujoco]\"` or "
-            "`uv add \"/path/to/mjxsim[examples]\"`."
+            'Install them with `uv add "/path/to/mjxsim[mujoco]"` or '
+            '`uv add "/path/to/mjxsim[examples]"`.'
         )
         raise ImportError(msg) from exc
 

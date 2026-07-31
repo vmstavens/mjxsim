@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "mjxsim"
 version = "0.1.0"
-description = "MuJoCo + Brax simulation utilities, datasets, and RL agents"
+description = "Accelerator-first MuJoCo/Brax utilities and robot-learning agents"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = { file = "LICENSE" }
 authors = [{ name = "Victor Melbye Staven" }]
 dependencies = [
@@ -50,7 +50,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["jax[cuda13]>=0.9.0.1"]
 datasets = [
     "gdown",
     "opencv-python",
@@ -121,17 +120,7 @@ stubs = ["pybind11-stubgen>=2.5.5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["mjxsim"]
-exclude = [
-    "/mjxsim/datasets",
-    "/mjxsim/envs",
-]
 artifacts = ["mjxsim/py.typed"]
-
-[tool.hatch.build.targets.sdist]
-exclude = [
-    "/mjxsim/datasets",
-    "/mjxsim/envs",
-]
 
 [tool.hatch.metadata]
 allow-direct-references = true

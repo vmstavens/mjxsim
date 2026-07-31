@@ -46,7 +46,7 @@ def test_robot_x_returns_namespace_scoped_mjx_quantities():
     assert robot.info.site_names == ["robot/tcp"]
     assert jp.allclose(robot.q, jp.array([0.25]))
     assert jp.allclose(robot.dq, jp.array([0.5]))
-    assert jp.allclose(robot.ddq, jp.array([0.1]))
+    assert jp.allclose(robot.ddq, data.qacc[:1])
     assert jp.allclose(robot.ctrl, jp.array([1.25]))
     assert robot.J().shape == (6, 1)
     assert robot.Mq.shape == (1, 1)

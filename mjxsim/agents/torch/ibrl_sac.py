@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from packaging import version
-from skrl import config, logger
+from skrl import config
 from skrl.agents.torch.base import AgentCfg, ExperimentCfg
 from skrl.memories.torch import Memory
 from skrl.models.torch import Model

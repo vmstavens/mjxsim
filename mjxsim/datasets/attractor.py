@@ -1,8 +1,5 @@
-import json
-
-import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 
 def generate_attractor_step(state, attractor, decay_factor=2.0):

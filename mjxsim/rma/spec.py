@@ -75,4 +75,3 @@ class RmaObservationLayout:
                 f"got {values.shape[-1]}"
             )
         return values[..., : self.spec.observation_dim]
-

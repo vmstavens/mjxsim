@@ -45,12 +45,20 @@ class GaussianActor(GaussianMixin, Model):
             parent=parent,
             name=name,
         )
-        GaussianMixin.__init__(self, clip_actions=True, clip_mean_actions=True, min_log_std=-5.0, max_log_std=2.0)
+        GaussianMixin.__init__(
+            self,
+            clip_actions=True,
+            clip_mean_actions=True,
+            min_log_std=-5.0,
+            max_log_std=2.0,
+        )
 
     def setup(self):
         self.layers = [nn.Dense(width) for width in self.hidden_sizes]
         self.mean_layer = nn.Dense(self.num_actions)
-        self.log_std_parameter = self.param("log_std_parameter", lambda _: jnp.zeros((self.num_actions,)))
+        self.log_std_parameter = self.param(
+            "log_std_parameter", lambda _: jnp.zeros((self.num_actions,))
+        )
 
     def __call__(self, inputs, role=""):
         del role
@@ -115,11 +123,21 @@ def make_sac_models(
     transform = ActionTransform.from_space(environment_action_space)
     action_space = transform.normalized_space
     models = {
-        "policy": GaussianActor(observation_space, action_space, device, hidden_sizes=hidden_sizes),
-        "critic_1": QCritic(observation_space, action_space, device, hidden_sizes=hidden_sizes),
-        "critic_2": QCritic(observation_space, action_space, device, hidden_sizes=hidden_sizes),
-        "target_critic_1": QCritic(observation_space, action_space, device, hidden_sizes=hidden_sizes),
-        "target_critic_2": QCritic(observation_space, action_space, device, hidden_sizes=hidden_sizes),
+        "policy": GaussianActor(
+            observation_space, action_space, device, hidden_sizes=hidden_sizes
+        ),
+        "critic_1": QCritic(
+            observation_space, action_space, device, hidden_sizes=hidden_sizes
+        ),
+        "critic_2": QCritic(
+            observation_space, action_space, device, hidden_sizes=hidden_sizes
+        ),
+        "target_critic_1": QCritic(
+            observation_space, action_space, device, hidden_sizes=hidden_sizes
+        ),
+        "target_critic_2": QCritic(
+            observation_space, action_space, device, hidden_sizes=hidden_sizes
+        ),
     }
     obs_dim = models["policy"].num_observations
     act_dim = models["policy"].num_actions

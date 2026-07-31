@@ -86,9 +86,7 @@ class ActorOnlyRmaPolicy(nn.Module):
             spec,
             actor=ConditionedActor(
                 spec,
-                hidden_dims=tuple(
-                    architecture.get("actor_hidden_dims", (256, 256))
-                ),
+                hidden_dims=tuple(architecture.get("actor_hidden_dims", (256, 256))),
             ),
             adaptation_encoder=AdaptationEncoder(
                 spec,
@@ -135,9 +133,12 @@ class ActorOnlyRmaController:
     def _environment_action(self, normalized_action: torch.Tensor) -> torch.Tensor:
         if self.action_low is None or self.action_high is None:
             return normalized_action
-        return 0.5 * (normalized_action.clamp(-1, 1) + 1.0) * (
-            self.action_high - self.action_low
-        ) + self.action_low
+        return (
+            0.5
+            * (normalized_action.clamp(-1, 1) + 1.0)
+            * (self.action_high - self.action_low)
+            + self.action_low
+        )
 
     @torch.no_grad()
     def act(self, observation: torch.Tensor) -> torch.Tensor:
@@ -166,4 +167,3 @@ class ActorOnlyRmaController:
             return
         mask = done.to(self.previous_action.device, dtype=torch.bool).reshape(-1)
         self.previous_action[mask] = 0
-

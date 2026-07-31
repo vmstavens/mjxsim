@@ -1,84 +1,106 @@
 # mjxsim
 
-MuJoCo/Brax simulation helpers, RL agents built on SKRL + PyTorch, and dataset utilities for robot learning experiments.
+Accelerator-first MuJoCo/Brax utilities, datasets, reinforcement-learning
+agents, and Rapid Motor Adaptation (RMA) components for robot learning.
+
+## Requirements
+
+- Python 3.12 or 3.13
+- Linux with a CUDA 13-compatible NVIDIA setup
+- [`uv`](https://docs.astral.sh/uv/) is recommended
+
+CUDA-enabled JAX and PyTorch packages are installed by default. This package is
+intentionally aimed at the accelerated systems used by its maintainers rather
+than at CPU-only or platform-neutral environments.
 
 ## Installation
-- With uv from this repo: `uv add /path/to/mjxsim`
-- From a Git URL: `uv add "git+ssh://git@your-host/mjxsim.git"`
-- The default install includes the dataset, environment, RL, diffusion-policy, MuJoCo/Brax, and example dependencies.
-- CUDA JAX support: `uv add "/path/to/mjxsim[cuda]"` only when you need CUDA-backed JAX.
 
-## Imports
-Installers expose a real `mjxsim` package, with the main building blocks
-available from the package root:
+Install from Git:
 
-```python
-import mjxsim as ms
-
-policy_cls = ms.DiffusionPolicy
-dataset_cls = ms.PushTStateDataset
+```bash
+uv add "mjxsim @ git+https://github.com/vmstavens/mjxsim.git"
 ```
 
-The module layout is also available under the `mjxsim` namespace:
+For development:
+
+```bash
+git clone https://github.com/vmstavens/mjxsim.git
+cd mjxsim
+uv sync --dev
+```
+
+## Public API
+
+The package root provides lazy access to commonly used components:
 
 ```python
-from mjxsim.agents.diffusion_policy_state import DiffusionPolicy
-from mjxsim.datasets.pushert import PushTStateDataset
-from mjxsim.trainers.supervised_trainer import SupervisedTrainer
+import mjxsim
+
+dataset_cls = mjxsim.PushTStateDataset
+environment_cls = mjxsim.PushTEnv
+```
+
+Stable namespaced imports are also available:
+
+```python
+from mjxsim.agents import (
+    DRLR,
+    DRLRTD3,
+    IBRL,
+    IBRLTD3,
+    AutoencoderAgent,
+    DiffusionPolicy,
+)
+from mjxsim.datasets import PushTStateDataset
+from mjxsim.rma import RmaSpec
+from mjxsim.rma.jax import make_ppo_rma_models
+from mjxsim.rma.torch import make_sac_rma_models
+from mjxsim.trainers.jax import JaxSequentialTrainer, JaxSequentialTrainerCfg
 from mjxsim.utils.datasets import split_dataset
 ```
 
-## Quick start
-- Create an environment lazily (Gym or Brax):
-  ```python
-  import mjxsim as ms
+`IBRL` and `DRLR` use SAC; `IBRLTD3` and `DRLRTD3` provide the corresponding
+TD3 implementations. The TD3 agents combine a trainable deterministic policy
+with a frozen imitation policy, mix online and demonstration replay, and use
+twin critics to choose behavior and bootstrap actions.
 
-  env = ms.PushTEnv()
-  ```
-- Train or evaluate the IBRL agent from the CLI:
-  - `mjx-sim-train-ibrl --env-id Ant-v4 --timesteps 100000`
-  - `mjx-sim-eval-ibrl --env-id Ant-v4 --checkpoint path/to/checkpoint`
-  - Diffusion variant: `mjx-sim-train-ibrl-diffusion ...` / `mjx-sim-eval-ibrl-diffusion ...`
-- Load datasets (e.g., PushT) and split:
-  ```python
-  from mjxsim.datasets.pushert import PushTStateDataset
-  from mjxsim.utils.datasets import split_dataset
+## RMA
 
-  dataset = PushTStateDataset(cache_dir="~/.cache/mjx-sim")
-  train_ds, val_ds = split_dataset(dataset, val_ratio=0.1)
-  ```
+`mjxsim.rma` contains the promoted, reusable RMA implementation:
 
-## Package contents
-- `envs`: MuJoCo/Brax and Gym wrappers (MuJoCo/Brax require the `mujoco` extra).
-- `agents`: IBRL, PPO, BC, diffusion-policy, representation-learning, and
-  latent-distillation agents built on SKRL/PyTorch.
-- `datasets`: Dataset utilities (PushT, attractor, state-only datasets).
-- `utils`: Helpers for env creation, dataset splitting, and data handling.
-- `cli`: Console entrypoints for training/evaluation.
+- framework-neutral observation/history specifications;
+- Torch modules and SKRL SAC adapters;
+- JAX/Flax modules and SKRL PPO adapters;
+- Phase 2 latent distillation;
+- actor-only deployment helpers.
 
-## Representation agents
-- `AutoencoderAgent` trains a deterministic MLP encoder/decoder on vector
-  states with `SupervisedTrainer`.
-- `VariationalAutoencoderStateAgent` and `VariationalAutoencoderVisionAgent`
-  train VAE representations for vector states and images.
-- `LatentDistillerAgent` implements privileged latent distillation: a trainable
-  deployment encoder receives sensor observations while a frozen privileged
-  encoder receives privileged observations, and the supervised loss matches
-  their latent representations. Either encoder can be deterministic or
-  variational; VAE encoders use their latent mean as the distillation target.
+See [`mjxsim/rma/README.md`](mjxsim/rma/README.md) for the model contract and
+examples.
 
-```python
-from mjxsim.agents import AutoencoderAgent, LatentDistillerAgent
+## JAX trainer
 
-student = AutoencoderAgent({"state_dim": 16, "latent_dim": 8})
-teacher = AutoencoderAgent({"state_dim": 24, "latent_dim": 8})
+`JaxSequentialTrainer` has two modes:
 
-distiller = LatentDistillerAgent(
-    encoder=student.model,
-    privileged_encoder=teacher.model,
-)
+- `compatibility` uses existing SKRL agent hooks and reports vector steps and
+  environment transitions separately;
+- `compiled` accepts a functional `CompiledTrainingKernel` so rollout and
+  update work can be staged with JAX without changing an existing agent's
+  semantics implicitly.
+
+## Development
+
+```bash
+uv run ruff format --check .
+uv run ruff check .
+uv run pytest
+uv build
 ```
 
-## Notes
-- Optional modules such as `mujoco_playground`, `robots`, or `ctrl` are not bundled; they are used only by experimental files and can be installed separately if needed.
-- Package data (e.g., `sim/scene/empty.xml` and stored stats) are included in wheels for direct use.
+The wheel contains the `mjxsim` package, including agents, datasets,
+environments, trainers, utilities, and both RMA backends. Research experiments
+and project-specific training scripts are intentionally not part of the public
+package.
+
+## License
+
+See [`LICENSE`](LICENSE).

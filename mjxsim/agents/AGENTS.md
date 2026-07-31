@@ -13,5 +13,7 @@ This package contains the available agent implementations.
 | Variational Autoencoder (Vision) | `VariationalAutoencoderVisionAgent` | `VAE_VISION_CFG` | Supervised image representation agent | [`variational_autoencoder.py`](variational_autoencoder.py) | [`../examples/variational_autoencoder_vision_mnist.py`](../examples/variational_autoencoder_vision_mnist.py) |
 | Latent Distiller | `LatentDistillerAgent` | `LATENT_DISTILLER_CFG` | Supervised privileged latent distillation agent | [`latent_distiller.py`](latent_distiller.py) | - |
 | DRLR | `DRLR` | `DRLR_SAC_CFG` | Reinforcement learning agent | [`drlr_sac.py`](drlr_sac.py) | - |
+| DRLR TD3 | `DRLRTD3` | `DRLR_TD3_CFG` | Deterministic reinforcement learning agent with diffusion-policy bootstrapping | [`drlr_td3.py`](drlr_td3.py) | - |
 | DRLR2 | `DRLR2` | `DRLR2_SAC_CFG` | Reinforcement learning agent | [`drlr2_sac.py`](drlr2_sac.py) | - |
 | IBRL | `IBRL` | `IBRL_SAC_CFG` | Reinforcement learning agent with imitation/bootstrap support | [`ibrl_sac.py`](ibrl_sac.py) | - |
+| IBRL TD3 | `IBRLTD3` | `IBRL_TD3_CFG` | Deterministic reinforcement learning agent with imitation/bootstrap support | [`ibrl_td3.py`](ibrl_td3.py) | - |

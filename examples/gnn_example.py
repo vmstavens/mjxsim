@@ -2,15 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import torch
 from torch.utils.data import DataLoader, TensorDataset, random_split
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from mjxsim import SupervisedTrainer
 from mjxsim.agents import GNNAgent
@@ -24,9 +17,7 @@ def make_toy_chain_dataset(
 ) -> TensorDataset:
     x = torch.randn(num_samples, num_nodes, in_features)
     # Toy graph-level target: mean x-coordinate plus endpoint y displacement.
-    y = x[:, :, 0].mean(dim=1, keepdim=True) + (
-        x[:, -1, 1:2] - x[:, 0, 1:2]
-    )
+    y = x[:, :, 0].mean(dim=1, keepdim=True) + (x[:, -1, 1:2] - x[:, 0, 1:2])
     return TensorDataset(x, y)
 
 

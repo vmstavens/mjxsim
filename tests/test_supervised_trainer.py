@@ -66,7 +66,9 @@ def test_early_stopping_restores_best_checkpoint_modules() -> None:
     assert agent.model.weight.item() == 1.0
 
 
-def test_min_delta_prevents_small_validation_improvement_from_resetting_patience() -> None:
+def test_min_delta_prevents_small_validation_improvement_from_resetting_patience() -> (
+    None
+):
     agent = _EarlyStoppingAgent([1.0, 0.95])
     trainer = SupervisedTrainer(
         agent=agent,

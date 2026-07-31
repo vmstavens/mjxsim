@@ -34,6 +34,49 @@ def test_jax_drlr2_config_and_action_normalization() -> None:
     assert jp.allclose(agent._unnormalize_action(normalized), actions)
 
 
+def test_jax_drlr2_can_batch_il_action_queries() -> None:
+    class _Policy:
+        def act(self, inputs, *, role):
+            del role
+            batch_size = inputs["observations"].shape[0]
+            return jp.zeros((batch_size, 2)), {"log_prob": jp.zeros((batch_size, 1))}
+
+    class _ImitationPolicy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def act(self, inputs, *, role, unnormalize_act):
+            del role
+            assert unnormalize_act is False
+            self.calls += 1
+            batch_size = inputs["observations"].shape[0]
+            return jp.full((batch_size, 1, 2), 0.5), {}
+
+    agent = object.__new__(DRLR2)
+    agent.cfg = DRLR2_SAC_CFG(batch_il_queries=True)
+    agent.policy = _Policy()
+    agent.IL_policy = _ImitationPolicy()
+    agent._observation_preprocessor = lambda value: value
+    agent._state_preprocessor = lambda value: value
+    agent._unnormalize_action = lambda value: value * 2
+    agent._compute_min_q_values = lambda states, actions: jp.sum(
+        actions, axis=-1, keepdims=True
+    )
+
+    actions, log_prob, _ = agent._select_act(
+        rl_obs=jp.zeros((2, 3)),
+        il_obs=jp.zeros((2, 2, 3)),
+        exp_obs=jp.ones((2, 2, 3)),
+        soft=True,
+        target=False,
+        timestep=0,
+    )
+
+    assert agent.IL_policy.calls == 1
+    assert jp.allclose(actions, jp.ones((2, 2)))
+    assert log_prob is None
+
+
 def test_jax_gnn_loss_and_training_step() -> None:
     agent = GNNAgent(
         GNN_CFG(

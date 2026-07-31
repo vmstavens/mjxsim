@@ -228,9 +228,7 @@ class ImageDecoder(nn.Module):
 class MLPEncoder(nn.Module):
     """MLP encoder for vector observations."""
 
-    def __init__(
-        self, state_dim: int, latent_dim: int, hidden_dims: list[int]
-    ) -> None:
+    def __init__(self, state_dim: int, latent_dim: int, hidden_dims: list[int]) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         in_dim = state_dim
@@ -249,9 +247,7 @@ class MLPEncoder(nn.Module):
 class MLPDecoder(nn.Module):
     """MLP decoder for vector observations."""
 
-    def __init__(
-        self, state_dim: int, latent_dim: int, hidden_dims: list[int]
-    ) -> None:
+    def __init__(self, state_dim: int, latent_dim: int, hidden_dims: list[int]) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         in_dim = latent_dim

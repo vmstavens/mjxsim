@@ -40,6 +40,18 @@ from mjxsim.rma.torch import (
 )
 ```
 
+JAX/Flax components:
+
+```python
+from mjxsim.rma.jax import (
+    AdaptationEncoder,
+    ConditionedActor,
+    PrivilegedEncoder,
+    make_networks,
+    make_ppo_rma_models,
+)
+```
+
 ## Phase 1 with a SAC-family agent
 
 The environment observation supplied to replay must use:
@@ -121,9 +133,69 @@ The deployed checkpoint contains only the conditioned actor and adaptation
 encoder. It does not contain critics, the privileged encoder, replay memory,
 or the training agent.
 
+## JAX/Flax PPO models
+
+The JAX integration uses a flat PPO observation containing the compact Phase-1
+observation followed by flattened state-action history:
+
+```text
+[observation, previous action, normalized privileged factors, history]
+```
+
+Construct initialized skrl models for each RMA phase or ablation:
+
+```python
+from mjxsim.rma.jax import RmaPpoObservationLayout, make_ppo_rma_models
+
+layout = RmaPpoObservationLayout(spec)
+models = make_ppo_rma_models(
+    observation_space,
+    action_space,
+    device,
+    spec=spec,
+    mode="privileged",  # "adaptation" or "no_adapt"
+)
+```
+
+The underlying `PrivilegedEncoder`, `AdaptationEncoder`, `ConditionedActor`,
+and `ValueFunction` are ordinary Flax modules parameterized by `RmaSpec`, so
+consuming projects can use them without skrl.
+
+JAX Phase 2 and deployment are also environment-independent:
+
+```python
+from mjxsim.rma.jax import (
+    ActorOnlyRmaPolicy,
+    LatentDistillationTrainer,
+    act,
+    initialize_controller_state,
+)
+
+distiller = LatentDistillationTrainer(
+    spec,
+    privileged_encoder,
+    privileged_variables,
+    key=key,
+)
+metrics = distiller.update(history_batch, factor_batch)
+
+policy = ActorOnlyRmaPolicy(
+    spec,
+    actor,
+    actor_variables,
+    distiller.adaptation_encoder,
+    distiller.adaptation_variables,
+)
+controller_state = initialize_controller_state(spec, num_envs=1)
+action, controller_state = act(policy, controller_state, observation)
+```
+
+The JAX controller is functional: callers retain the returned controller state
+and use `reset_controller_state` with environment done masks.
+
 ## Using from another project
 
-For a sibling checkout such as `dlo-mani`, install this project as a dependency:
+For a sibling checkout, install this project as a dependency:
 
 ```bash
 uv add --editable ../mjxsim
@@ -140,4 +212,3 @@ Environment-specific adapters should stay in the consuming project. For a DLO
 task, define its own `RmaSpec`, factor extraction, normalization, and history
 collection; import the generic encoders, SAC models, distiller, and deployment
 controller from `mjxsim.rma`.
-

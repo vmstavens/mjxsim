@@ -59,4 +59,3 @@ class RmaHistoryBuffer:
 
     def clone(self) -> torch.Tensor:
         return self.values.clone()
-
