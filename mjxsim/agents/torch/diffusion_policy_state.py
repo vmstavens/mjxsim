@@ -13,6 +13,12 @@ from diffusers.utils.torch_utils import randn_tensor
 from skrl.agents.torch.base import Agent, AgentCfg, ExperimentCfg, Model
 from skrl.models.torch import DeterministicMixin
 
+from mjxsim.agents.action_normalization import (
+    ActionNormalization,
+    action_normalization_from_legacy_stats,
+)
+from mjxsim.agents.torch.action_transform import ActionTransform
+
 logging.basicConfig(level=logging.INFO)  # This adds a default handler
 relative_path = os.path.relpath(__file__)  # Relative to current working directory
 logger = logging.getLogger(relative_path)
@@ -439,12 +445,39 @@ class DiffusionPolicy(Agent):
         memory=None,
         config: DP_CFG | None = None,
         stats: Optional[dict[str, Any]] = None,
+        action_normalization: ActionNormalization | dict[str, Any] | None = None,
+        training_data_domain: str | None = None,
     ):
         self.device = _resolve_device(device)
         _config = DP_CFG() if config is None else copy.deepcopy(config)
         _config.expand()
         self.config: DP_CFG = _config
         self.stats = stats
+        legacy_normalized_data = (
+            action_normalization is None and stats is not None and "action" in stats
+        )
+        if action_normalization is None and legacy_normalized_data:
+            action_normalization = action_normalization_from_legacy_stats(stats)
+        self.action_normalization = (
+            None
+            if action_normalization is None
+            else ActionNormalization.coerce(action_normalization)
+        )
+        if self.action_normalization is not None:
+            if self.action_normalization.size != a_dim:
+                raise ValueError("Action normalization dimension does not match a_dim")
+            self.action_transform = ActionTransform.from_normalization(
+                self.action_normalization, device=self.device
+            )
+        else:
+            self.action_transform = None
+        if training_data_domain is None:
+            training_data_domain = (
+                "normalized" if legacy_normalized_data else "physical"
+            )
+        if training_data_domain not in ("physical", "normalized"):
+            raise ValueError("training_data_domain must be 'physical' or 'normalized'")
+        self.training_data_domain = training_data_domain
 
         self._a_dim: int = a_dim
         self._o_dim: int = o_dim
@@ -547,6 +580,28 @@ class DiffusionPolicy(Agent):
             states = states.unsqueeze(1)
         if len(actions.shape) == 2:
             actions = actions.unsqueeze(1)
+        if self.action_transform is None:
+            raise ValueError(
+                "Diffusion Policy training requires action_normalization. Use "
+                "ActionNormalization.from_bounds(...) or explicitly "
+                "ActionNormalization.from_dataset(...)."
+            )
+        if self.training_data_domain == "physical":
+            if self.stats is not None and "obs" in self.stats:
+                stats = self.stats["obs"]
+                minimum = torch.as_tensor(
+                    stats["min"], device=states.device, dtype=states.dtype
+                )
+                maximum = torch.as_tensor(
+                    stats["max"], device=states.device, dtype=states.dtype
+                )
+                scale = torch.where(
+                    maximum > minimum, maximum - minimum, torch.ones_like(maximum)
+                )
+                states = 2.0 * (states - minimum) / scale - 1.0
+            actions = self.action_transform.normalize(actions)
+        else:
+            self.action_transform.assert_normalized(actions)
 
         # Conditioning
         obs_cond = self.prepare_observation_condition(states)
@@ -591,6 +646,7 @@ class DiffusionPolicy(Agent):
         num_inference_steps=None,
         normalize_obs: Optional[bool] = None,
         unnormalize_act: Optional[bool] = None,
+        output_domain: str | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Generate actions using DDIM sampling
 
@@ -652,24 +708,23 @@ class DiffusionPolicy(Agent):
                 noise_pred, t, noisy_actions
             ).prev_sample
 
-        if self.stats is not None:
-            do_unnormalize = unnormalize_act if unnormalize_act is not None else True
-        else:
-            do_unnormalize = False
-
-        if do_unnormalize:
-            stats = self.stats["action"]
-            min_val = torch.as_tensor(
-                stats["min"], device=noisy_actions.device, dtype=noisy_actions.dtype
+        noisy_actions = noisy_actions.clamp(-1.0, 1.0)
+        if output_domain is not None and output_domain not in (
+            "normalized",
+            "physical",
+        ):
+            raise ValueError("output_domain must be 'normalized' or 'physical'")
+        if output_domain is None:
+            output_domain = (
+                "physical"
+                if unnormalize_act is True
+                or (unnormalize_act is None and self.action_transform is not None)
+                else "normalized"
             )
-            max_val = torch.as_tensor(
-                stats["max"], device=noisy_actions.device, dtype=noisy_actions.dtype
-            )
-            range_val = max_val - min_val
-            range_val = torch.where(
-                range_val == 0, torch.ones_like(range_val), range_val
-            )
-            noisy_actions = 0.5 * (noisy_actions + 1.0) * range_val + min_val
+        if output_domain == "physical":
+            if self.action_transform is None:
+                raise ValueError("Physical DP output requires action_normalization")
+            noisy_actions = self.action_transform.denormalize(noisy_actions)
 
         return noisy_actions, {}
 
@@ -721,6 +776,14 @@ class DiffusionPolicy(Agent):
             "a_dim": self._a_dim,
             "o_dim": self._o_dim,
             "stats": self.stats,
+            "normalization": {
+                "schema_version": 1,
+                "observation": None if self.stats is None else self.stats.get("obs"),
+                "action": None
+                if self.action_normalization is None
+                else self.action_normalization.to_dict(),
+            },
+            "training_data_domain": self.training_data_domain,
         }
         torch.save(checkpoint, path)
 
@@ -742,6 +805,7 @@ class DiffusionPolicy(Agent):
             a_dim=a_dim, o_dim=o_dim, config=config
         )
 
+        normalization = checkpoint.get("normalization")
         policy = cls(
             a_dim=a_dim,
             o_dim=o_dim,
@@ -750,6 +814,10 @@ class DiffusionPolicy(Agent):
             device=device,
             config=config,
             stats=checkpoint.get("stats"),
+            action_normalization=None
+            if normalization is None
+            else normalization.get("action"),
+            training_data_domain=checkpoint.get("training_data_domain"),
         )
         policy.model.load_state_dict(checkpoint["model_state_dict"])
         policy.ema_model.load_state_dict(checkpoint["ema_model_state_dict"])

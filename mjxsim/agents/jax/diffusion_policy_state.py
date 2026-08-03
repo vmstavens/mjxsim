@@ -13,7 +13,14 @@ from typing import Any
 import flax.linen as nn
 import jax
 import jax.numpy as jp
+import numpy as np
 import optax
+
+from mjxsim.agents.action_normalization import (
+    ActionNormalization,
+    action_normalization_from_legacy_stats,
+)
+from mjxsim.agents.jax.action_transform import ActionTransform
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -201,12 +208,26 @@ class DiffusionPolicy:
         config: DP_CFG | Mapping[str, Any] | None = None,
         rng: jax.Array | None = None,
         stats: Mapping[str, Any] | None = None,
+        action_normalization: ActionNormalization | Mapping[str, Any] | None = None,
     ):
         self.config = _coerce_cfg(config)
         self.a_dim = a_dim
         self.o_dim = o_dim
         self.rng = jax.random.PRNGKey(0) if rng is None else rng
         self.stats = None
+        self.action_normalization = (
+            None
+            if action_normalization is None
+            else ActionNormalization.coerce(action_normalization)
+        )
+        if self.action_normalization is not None:
+            if self.action_normalization.size != a_dim:
+                raise ValueError("Action normalization dimension does not match a_dim")
+            self.action_transform = ActionTransform.from_normalization(
+                self.action_normalization
+            )
+        else:
+            self.action_transform = None
         if stats is not None:
             self.set_stats(stats)
         self.model = ConditionalUnet1D(a_dim=a_dim, o_dim=o_dim, config=self.config)
@@ -242,9 +263,15 @@ class DiffusionPolicy:
 
     def loss(self, params: Any, batch: Any, rng: jax.Array) -> jax.Array:
         obs, actions = self._get_batch_arrays(batch)
+        if self.action_transform is None:
+            raise ValueError(
+                "Diffusion Policy training requires action_normalization. Use "
+                "ActionNormalization.from_bounds(...) or explicitly "
+                "ActionNormalization.from_dataset(...)."
+            )
         if self.stats is not None:
             obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
-            actions = self._minmax_scale(actions, self.stats["action"], inverse=False)
+        actions = self.action_transform.normalize(actions)
         batch_size = actions.shape[0]
         rng_t, rng_noise = jax.random.split(rng)
         timesteps = jax.random.randint(
@@ -304,6 +331,7 @@ class DiffusionPolicy:
         num_steps: int | None = None,
         normalize_obs: bool | None = None,
         unnormalize_act: bool | None = None,
+        output_domain: str | None = None,
     ) -> jax.Array:
         rng = self.rng if rng is None else rng
         variables = {"params": self.params if params is None else params}
@@ -315,14 +343,32 @@ class DiffusionPolicy:
             raise ValueError(
                 "num_steps must be between 0 and configured num_diffusion_iters"
             )
-        actions = self._sample_actions_jit(
-            variables["params"],
-            obs,
-            rng,
-            num_steps=steps,
+        actions = jp.clip(
+            self._sample_actions_jit(
+                variables["params"],
+                obs,
+                rng,
+                num_steps=steps,
+            ),
+            -1.0,
+            1.0,
         )
-        if self.stats is not None and unnormalize_act is not False:
-            actions = self._minmax_scale(actions, self.stats["action"], inverse=True)
+        if output_domain is not None and output_domain not in (
+            "normalized",
+            "physical",
+        ):
+            raise ValueError("output_domain must be 'normalized' or 'physical'")
+        if output_domain is None:
+            output_domain = (
+                "physical"
+                if unnormalize_act is True
+                or (unnormalize_act is None and self.action_transform is not None)
+                else "normalized"
+            )
+        if output_domain == "physical":
+            if self.action_transform is None:
+                raise ValueError("Physical DP output requires action_normalization")
+            actions = self.action_transform.denormalize(actions)
         return actions
 
     def state_dict(self) -> dict[str, Any]:
@@ -333,6 +379,13 @@ class DiffusionPolicy:
             "params": jax.device_get(self.params),
             "ema_params": self.ema.copy_to(),
             "stats": self.stats,
+            "normalization": {
+                "schema_version": 1,
+                "observation": self.stats["obs"] if self.stats is not None else None,
+                "action": None
+                if self.action_normalization is None
+                else self.action_normalization.to_dict(),
+            },
         }
 
     def save(self, path: str | Path | None = None) -> None:
@@ -353,21 +406,34 @@ class DiffusionPolicy:
     ) -> DiffusionPolicy:
         with Path(path).open("rb") as file:
             checkpoint = pickle.load(file)
+        normalization = checkpoint.get("normalization")
         policy = cls(
             a_dim=checkpoint["a_dim"],
             o_dim=checkpoint["o_dim"],
             config=checkpoint["config"],
             rng=rng,
             stats=checkpoint.get("stats"),
+            action_normalization=None
+            if normalization is None
+            else normalization.get("action"),
         )
         policy.params = checkpoint["params"]
         policy.ema.shadow_params = checkpoint.get("ema_params", policy.params)
         return policy
 
     def set_stats(self, stats: Mapping[str, Any]) -> None:
-        """Attach validated training-split observation and action statistics."""
+        """Attach validated training-split observation statistics.
+
+        Old ``stats["action"]`` values are accepted as explicitly
+        dataset-derived bounds for checkpoint compatibility.
+        """
+        if self.action_normalization is None and "action" in stats:
+            self.action_normalization = action_normalization_from_legacy_stats(stats)
+            self.action_transform = ActionTransform.from_normalization(
+                self.action_normalization
+            )
         result = {}
-        for name, expected_dim in (("obs", self.o_dim), ("action", self.a_dim)):
+        for name, expected_dim in (("obs", self.o_dim),):
             if name not in stats:
                 raise KeyError(f"Missing diffusion statistics: {name}")
             item = stats[name]
@@ -382,24 +448,77 @@ class DiffusionPolicy:
             result[name] = {"min": minimum, "max": maximum}
         self.stats = result
 
+    def set_action_normalization(
+        self, normalization: ActionNormalization | Mapping[str, Any]
+    ) -> None:
+        value = ActionNormalization.coerce(normalization)
+        if value.size != self.a_dim:
+            raise ValueError("Action normalization dimension does not match a_dim")
+        self.action_normalization = value
+        self.action_transform = ActionTransform.from_normalization(value)
+
     @staticmethod
     def compute_stats(
-        observations: Any, actions: Any
+        observations: Any,
+        actions: Any | None = None,
+        *,
+        action_mode: str | None = None,
     ) -> dict[str, dict[str, jax.Array]]:
-        """Compute min/max normalization statistics from a training split."""
+        """Compute training-split statistics without implicit action bounds.
+
+        Passing actions requires the explicit legacy/exploratory
+        ``action_mode="dataset_minmax"`` opt-in.
+        """
         observations = jp.asarray(observations, dtype=jp.float32)
-        actions = jp.asarray(actions, dtype=jp.float32)
         obs_axes = tuple(range(observations.ndim - 1))
-        action_axes = tuple(range(actions.ndim - 1))
-        return {
+        result = {
             "obs": {
                 "min": jp.min(observations, axis=obs_axes),
                 "max": jp.max(observations, axis=obs_axes),
-            },
-            "action": {
+            }
+        }
+        if actions is not None:
+            if action_mode != "dataset_minmax":
+                raise ValueError(
+                    "Dataset-derived action bounds require action_mode='dataset_minmax'"
+                )
+            actions = jp.asarray(actions, dtype=jp.float32)
+            action_axes = tuple(range(actions.ndim - 1))
+            result["action"] = {
                 "min": jp.min(actions, axis=action_axes),
                 "max": jp.max(actions, axis=action_axes),
+            }
+        return result
+
+    @staticmethod
+    def compute_normalization(
+        observations: Any,
+        *,
+        action_normalization: ActionNormalization | Mapping[str, Any] | None = None,
+        actions: Any | None = None,
+        action_mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Build an explicit normalization contract from physical training data."""
+
+        observations = jp.asarray(observations, dtype=jp.float32)
+        obs_axes = tuple(range(observations.ndim - 1))
+        if action_normalization is None:
+            if action_mode != "dataset_minmax" or actions is None:
+                raise ValueError(
+                    "Provide fixed action_normalization or explicitly set "
+                    "action_mode='dataset_minmax' with actions"
+                )
+            action_normalization = ActionNormalization.from_dataset(np.asarray(actions))
+        else:
+            action_normalization = ActionNormalization.coerce(action_normalization)
+        return {
+            "schema_version": 1,
+            "observation": {
+                "kind": "dataset_minmax",
+                "min": jp.min(observations, axis=obs_axes),
+                "max": jp.max(observations, axis=obs_axes),
             },
+            "action": action_normalization.to_dict(),
         }
 
     @staticmethod

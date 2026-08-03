@@ -6,6 +6,8 @@ from mjxsim.agents.torch.autoencoder import (
     Autoencoder,
     AutoencoderAgent,
 )
+from mjxsim.agents.action_normalization import ActionNormalization
+from mjxsim.agents.torch.action_transform import ActionTransform
 from mjxsim.agents.torch.diffusion_policy_state import (
     DIFFUSION_POLICY_STATE_DEFAULT_CONFIG,
     DP_CFG,
@@ -61,6 +63,8 @@ __all__ = [
     "AE_CFG",
     "AE_DEFAULT_CONFIG",
     "Agent",
+    "ActionNormalization",
+    "ActionTransform",
     "Autoencoder",
     "AutoencoderAgent",
     "ConditionalUnet1D",

@@ -16,6 +16,7 @@ from mjxsim.agents.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
+from mjxsim.agents.action_normalization import ActionNormalization
 from mjxsim.envs.pushert import PushTEnv
 from mjxsim.datasets.pushert import PushTStateDataset, download_dataset, save_video
 from mjxsim.trainers.supervised_trainer import SupervisedTrainer, SupervisedTrainerCfg
@@ -128,6 +129,10 @@ def build_agent(
         dataloader=dataloader,
         config=cfg,
         stats=dataset.stats,
+        action_normalization=ActionNormalization.from_dataset(
+            dataset.train_data["action"]
+        ),
+        training_data_domain="normalized",
     )
     return agent
 

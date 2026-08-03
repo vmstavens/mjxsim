@@ -3,7 +3,12 @@
 Import the JAX backend explicitly:
 
 ```python
-from mjxsim.agents.jax import DRLR2, DRLR2_SAC_CFG, make_sac_models
+from mjxsim.agents.jax import (
+    ActionNormalization,
+    DRLR2,
+    DRLR2_SAC_CFG,
+    make_sac_models,
+)
 from mjxsim.utils.jax_replay import create_drlr2_memory, load_expert_memory
 ```
 
@@ -66,12 +71,24 @@ next stage's frozen IL policy.
 
 ## Diffusion normalization
 
-Compute statistics from the training split, attach them before training, and
-save them with the checkpoint:
+Observation statistics come from the training split. Action normalization is a
+separate, explicit task contract using the bounds that were available to the
+expert controller:
 
 ```python
-stats = DiffusionPolicy.compute_stats(train_observations, train_actions)
-policy.set_stats(stats)
+action_normalization = ActionNormalization.from_action_space(
+    env.action_space,
+    contract_id="grasped_end_delta_pose_v1",
+)
+normalization = DiffusionPolicy.compute_normalization(
+    train_observations,
+    action_normalization=action_normalization,
+)
+policy.set_stats({"obs": normalization["observation"]})
+policy.set_action_normalization(action_normalization)
 ```
 
-The same observation/action transforms are applied by `loss` and `act`.
+For a legacy dataset whose expert-controller limits are unknown, opt in with
+`action_mode="dataset_minmax"` and provide the training actions. Such a
+checkpoint is suitable for standalone evaluation but is rejected by DRLR2:
+RL integration requires stable fixed bounds matching the environment.

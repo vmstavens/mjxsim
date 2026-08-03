@@ -23,6 +23,7 @@ from mjxsim.agents.jax.drlr2_sac import (
     JaxDRLR2Config,
 )
 from mjxsim.agents.jax.action_transform import ActionTransform
+from mjxsim.agents.action_normalization import ActionNormalization
 from mjxsim.agents.jax.sac_models import GaussianActor, QCritic, make_sac_models
 from mjxsim.agents.jax.gnn import (
     GNN_CFG,
@@ -39,6 +40,7 @@ __all__ = [
     "Autoencoder",
     "AutoencoderAgent",
     "ActionTransform",
+    "ActionNormalization",
     "ConditionalUnet1D",
     "DIFFUSION_POLICY_STATE_DEFAULT_CONFIG",
     "DP_CFG",

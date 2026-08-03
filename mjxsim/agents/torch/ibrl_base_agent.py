@@ -9,6 +9,8 @@ from skrl.agents.torch.base import AgentCfg
 from skrl.memories.torch import Memory
 from skrl.models.torch import Model
 
+from mjxsim.agents.action_normalization import validate_policy_action_space
+
 
 class Agent(SkrlAgent):
     """skrl 2 torch base agent with IBRL's IL model and expert-memory hooks."""
@@ -44,6 +46,10 @@ class Agent(SkrlAgent):
             action_space=action_space,
             device=device,
         )
+
+        for model in self.models_il.values():
+            if model is not None:
+                validate_policy_action_space(model, self.action_space)
 
         # Move imitation-learning models using the same model-owned device policy
         # as skrl's base class uses for RL models.

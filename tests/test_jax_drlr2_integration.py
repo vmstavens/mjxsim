@@ -13,6 +13,7 @@ from mjxsim.agents.jax import (
     make_sac_models,
 )
 from mjxsim.utils.jax_replay import create_drlr2_memory, load_expert_memory
+from mjxsim.agents.action_normalization import ActionNormalization
 
 
 def _changed(before, after) -> bool:
@@ -73,6 +74,9 @@ def test_drlr2_one_update_and_actor_checkpoint(tmp_path) -> None:
             num_diffusion_iters=2,
             down_dims=[8],
             diffusion_step_embed_dim=8,
+        ),
+        action_normalization=ActionNormalization.from_action_space(
+            action_space, contract_id="test_actions_v1"
         ),
     )
     cfg = DRLR2_SAC_CFG(

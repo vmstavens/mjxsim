@@ -86,6 +86,10 @@ class DiffusionPolicyAdapter:
     """Expose the local Flax diffusion policy through SKRL's ``act`` surface."""
 
     def __init__(self, policy: DiffusionPolicy, action_transform: ActionTransform):
+        if policy.action_normalization is None:
+            raise ValueError(
+                "DRLR2 requires Diffusion Policy action-normalization metadata"
+            )
         self.policy = policy
         self.rng = policy.rng
         self.action_transform = action_transform
@@ -103,7 +107,7 @@ class DiffusionPolicyAdapter:
         if rng is None:
             self.rng, rng = jax.random.split(self.rng)
         actions = jnp.clip(
-            self.policy.act(observations, rng=rng, unnormalize_act=False), -1, 1
+            self.policy.act(observations, rng=rng, output_domain="normalized"), -1, 1
         )
         if unnormalize_act:
             actions = self.action_transform.denormalize(actions)
@@ -213,6 +217,11 @@ class DRLR2(SAC):
         self.action_transform = ActionTransform.from_space(action_space)
         self.IL_policy = self.models_il["policy"]
         if isinstance(self.IL_policy, DiffusionPolicy):
+            if self.IL_policy.action_normalization is None:
+                raise ValueError(
+                    "DRLR2 requires Diffusion Policy action-normalization metadata"
+                )
+            self.IL_policy.action_normalization.assert_matches_space(action_space)
             self.IL_policy = DiffusionPolicyAdapter(
                 self.IL_policy, self.action_transform
             )

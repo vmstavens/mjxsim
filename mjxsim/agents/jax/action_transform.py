@@ -9,6 +9,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from mjxsim.agents.action_normalization import ActionNormalization
+
 
 @dataclasses.dataclass(frozen=True)
 class ActionTransform:
@@ -31,12 +33,24 @@ class ActionTransform:
             )
         return cls(low=low, high=high)
 
+    @classmethod
+    def from_normalization(cls, normalization: ActionNormalization) -> ActionTransform:
+        return cls(
+            low=jnp.asarray(normalization.low, dtype=jnp.float32),
+            high=jnp.asarray(normalization.high, dtype=jnp.float32),
+        )
+
     @property
     def normalized_space(self) -> gymnasium.spaces.Box:
         shape = tuple(self.low.shape)
         return gymnasium.spaces.Box(-1.0, 1.0, shape=shape, dtype=np.float32)
 
-    def normalize(self, actions: jax.Array, *, clip: bool = True) -> jax.Array:
+    def normalize(self, actions: jax.Array, *, clip: bool = False) -> jax.Array:
+        """Map physical actions to normalized coordinates.
+
+        Clipping is opt-in so out-of-contract demonstrations are not silently
+        changed. Policy outputs may be clipped at the environment boundary.
+        """
         actions = jnp.asarray(actions, dtype=jnp.float32)
         normalized = 2.0 * (actions - self.low) / (self.high - self.low) - 1.0
         return jnp.clip(normalized, -1.0, 1.0) if clip else normalized

@@ -13,6 +13,7 @@ import zarr
 from torch.utils.data import DataLoader, Dataset
 
 from mjxsim.agents.diffusion_policy_vision import VISION_DP_CFG, DiffusionPolicyVision
+from mjxsim.agents.action_normalization import ActionNormalization
 from mjxsim.envs.pushert import PushTEnv
 from mjxsim.datasets.pushert import (
     create_sample_indices,
@@ -73,6 +74,7 @@ class PushTImageDataset(Dataset):
             "action": action,
         }
         self.stats = {key: get_data_stats(value) for key, value in train_data.items()}
+        self.action_normalization = ActionNormalization.from_dataset(action)
         self.normalized_train_data = {
             key: normalize_data(value, self.stats[key])
             for key, value in train_data.items()
@@ -254,6 +256,8 @@ def main() -> None:
         dataloader=dataloader,
         config=cfg,
         stats=dataset.stats,
+        action_normalization=dataset.action_normalization,
+        training_data_domain="normalized",
     )
 
     def callback(epoch: int, train_loss: float, val_loss: float | None = None) -> None:

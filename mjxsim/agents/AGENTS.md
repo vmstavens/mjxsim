@@ -17,3 +17,9 @@ This package contains the available agent implementations.
 | DRLR2 | `DRLR2` | `DRLR2_SAC_CFG` | Reinforcement learning agent | [`drlr2_sac.py`](drlr2_sac.py) | - |
 | IBRL | `IBRL` | `IBRL_SAC_CFG` | Reinforcement learning agent with imitation/bootstrap support | [`ibrl_sac.py`](ibrl_sac.py) | - |
 | IBRL TD3 | `IBRLTD3` | `IBRL_TD3_CFG` | Deterministic reinforcement learning agent with imitation/bootstrap support | [`ibrl_td3.py`](ibrl_td3.py) | - |
+
+Diffusion policies must carry an explicit `ActionNormalization` contract.
+Use `ActionNormalization.from_bounds(...)` (or `.from_action_space(...)`) for
+production training. `ActionNormalization.from_dataset(...)` is an explicit
+fallback for legacy/exploratory datasets; it is rejected when integrating a DP
+checkpoint with DRLR/IBRL because its bounds are not a stable task contract.
