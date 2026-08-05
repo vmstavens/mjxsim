@@ -21,6 +21,12 @@ from mjxsim.agents.action_normalization import (
     action_normalization_from_legacy_stats,
 )
 from mjxsim.agents.jax.action_transform import ActionTransform
+from mjxsim.agents.jax.ddpm import (
+    add_noise,
+    inference_timesteps,
+    squaredcos_cap_v2_betas,
+    step as ddpm_step,
+)
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -38,6 +44,7 @@ class DP_CFG:
     diffusion_step_embed_dim: int = 256
     down_dims: list[int] = dataclasses.field(default_factory=lambda: [256, 512, 1024])
     kernel_size: int = 5
+    n_groups: int = 8
     pred_horizon: int = 16
     obs_horizon: int = 2
     action_horizon: int = 8
@@ -49,8 +56,10 @@ class DP_CFG:
     num_epochs: int = 100
     max_steps: int = 200
     eval_frequency: int = 10
-    beta_start: float = 1e-4
-    beta_end: float = 2e-2
+    beta_schedule: str = "squaredcos_cap_v2"
+    clip_sample: bool = True
+    clip_sample_range: float = 1.0
+    variance_type: str = "fixed_small"
     prediction_type: str = "epsilon"
     lr_scheduler_cfg: LRSchedulerCfg = dataclasses.field(default_factory=LRSchedulerCfg)
     checkpoint_path: str = ""
@@ -62,10 +71,27 @@ class DP_CFG:
             raise ValueError("obs_horizon must be positive")
         if self.action_horizon < 1:
             raise ValueError("action_horizon must be positive")
+        if self.action_horizon > self.pred_horizon:
+            raise ValueError("action_horizon cannot exceed pred_horizon")
         if self.num_diffusion_iters < 1:
             raise ValueError("num_diffusion_iters must be positive")
+        if not self.down_dims or any(width < 1 for width in self.down_dims):
+            raise ValueError("down_dims must contain positive channel widths")
+        if self.n_groups < 1 or any(
+            width % self.n_groups != 0 for width in self.down_dims
+        ):
+            raise ValueError("Every down_dims value must be divisible by n_groups")
+        divisor = 2 ** (len(self.down_dims) - 1)
+        if self.pred_horizon % divisor:
+            raise ValueError(
+                f"pred_horizon must be divisible by {divisor} for this U-Net"
+            )
+        if self.beta_schedule != "squaredcos_cap_v2":
+            raise ValueError("Only beta_schedule='squaredcos_cap_v2' is supported")
         if self.prediction_type != "epsilon":
             raise ValueError("Only epsilon prediction is currently supported")
+        if self.variance_type not in {"fixed_small", "fixed_large"}:
+            raise ValueError("Unsupported DDPM variance_type")
 
     def to_dict(self) -> dict[str, Any]:
         self.expand()
@@ -99,8 +125,32 @@ def _coerce_cfg(cfg: DP_CFG | Mapping[str, Any] | None) -> DP_CFG:
         raise TypeError(
             f"cfg must be a DP_CFG, mapping, or None (got {type(cfg).__name__})"
         )
+    if isinstance(result.lr_scheduler_cfg, Mapping):
+        result.lr_scheduler_cfg = LRSchedulerCfg(**result.lr_scheduler_cfg)
     result.expand()
     return result
+
+
+def _learning_rate_schedule(config: DP_CFG) -> optax.Schedule:
+    """Match the Torch backend's linear warmup followed by cosine decay."""
+    warmup_steps = config.lr_scheduler_cfg.num_warmup_steps
+    total_steps = config.lr_scheduler_cfg.num_training_steps
+    if total_steps < 1:
+        raise ValueError("num_training_steps must be positive")
+    if not 0 <= warmup_steps < total_steps:
+        raise ValueError("num_warmup_steps must be in [0, num_training_steps)")
+    if warmup_steps == 0:
+        return optax.cosine_decay_schedule(
+            init_value=config.learning_rate,
+            decay_steps=total_steps,
+        )
+    return optax.warmup_cosine_decay_schedule(
+        init_value=0.0,
+        peak_value=config.learning_rate,
+        warmup_steps=warmup_steps,
+        decay_steps=total_steps,
+        end_value=0.0,
+    )
 
 
 class SinusoidalPosEmb(nn.Module):
@@ -120,27 +170,107 @@ class SinusoidalPosEmb(nn.Module):
         return emb
 
 
-class Mlp(nn.Module):
-    """Simple MLP block."""
+def mish(x: jax.Array) -> jax.Array:
+    """Mish activation used by the reference Diffusion Policy U-Net."""
+    return x * jp.tanh(nn.softplus(x))
 
-    hidden_sizes: Sequence[int]
-    output_size: int
+
+class Downsample1d(nn.Module):
+    """Stride-two temporal convolution."""
+
+    features: int
 
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
-        for width in self.hidden_sizes:
-            x = nn.Dense(width)(x)
-            x = x * jp.tanh(nn.softplus(x))
-        return nn.Dense(self.output_size)(x)
+        return nn.Conv(
+            self.features,
+            kernel_size=(3,),
+            strides=(2,),
+            padding=((1, 1),),
+            name="conv",
+        )(x)
+
+
+class Upsample1d(nn.Module):
+    """Stride-two temporal transposed convolution."""
+
+    features: int
+
+    @nn.compact
+    def __call__(self, x: jax.Array) -> jax.Array:
+        return nn.ConvTranspose(
+            self.features,
+            kernel_size=(4,),
+            strides=(2,),
+            padding="SAME",
+            name="conv",
+        )(x)
+
+
+class Conv1dBlock(nn.Module):
+    """Temporal convolution followed by GroupNorm and Mish."""
+
+    features: int
+    kernel_size: int
+    n_groups: int
+
+    @nn.compact
+    def __call__(self, x: jax.Array) -> jax.Array:
+        x = nn.Conv(
+            self.features,
+            kernel_size=(self.kernel_size,),
+            padding=((self.kernel_size // 2, self.kernel_size // 2),),
+            name="conv",
+        )(x)
+        x = nn.GroupNorm(
+            num_groups=self.n_groups,
+            epsilon=1e-5,
+            name="norm",
+        )(x)
+        return mish(x)
+
+
+class ConditionalResidualBlock1D(nn.Module):
+    """Two convolution blocks with FiLM scale/bias conditioning."""
+
+    features: int
+    kernel_size: int
+    n_groups: int
+
+    @nn.compact
+    def __call__(self, x: jax.Array, cond: jax.Array) -> jax.Array:
+        residual = x
+        out = Conv1dBlock(
+            self.features,
+            self.kernel_size,
+            self.n_groups,
+            name="block_0",
+        )(x)
+        embedding = nn.Dense(2 * self.features, name="cond_encoder")(mish(cond))
+        scale, bias = jp.split(embedding, 2, axis=-1)
+        out = scale[:, None, :] * out + bias[:, None, :]
+        out = Conv1dBlock(
+            self.features,
+            self.kernel_size,
+            self.n_groups,
+            name="block_1",
+        )(out)
+        if residual.shape[-1] != self.features:
+            residual = nn.Conv(
+                self.features,
+                kernel_size=(1,),
+                padding="VALID",
+                name="residual_conv",
+            )(residual)
+        return out + residual
 
 
 class ConditionalUnet1D(nn.Module):
-    """Compact JAX denoiser with the same call surface as a state DP U-Net.
+    """Flax port of the reference temporal conditional Diffusion Policy U-Net.
 
-    The first JAX implementation favors a stable supervised-training contract
-    over exact architectural parity with the Torch U-Net. It consumes noisy
-    action sequences, diffusion timesteps, and flattened state conditioning,
-    then predicts per-action noise with shape ``(B, pred_horizon, a_dim)``.
+    This implementation follows the layer graph used by the Torch backend while
+    keeping JAX's channels-last convention: ``(batch, horizon, channels)``.
+    The block structure is adapted from the MIT-licensed Octo implementation.
     """
 
     a_dim: int
@@ -154,25 +284,90 @@ class ConditionalUnet1D(nn.Module):
         timestep: jax.Array,
         global_cond: jax.Array,
     ) -> jax.Array:
+        timestep = jp.asarray(timestep)
         if timestep.ndim == 0:
             timestep = jp.full((sample.shape[0],), timestep)
-        if timestep.ndim == 1:
-            timestep = timestep.astype(jp.float32)
+        timestep = timestep.astype(jp.float32)
 
-        time_emb = SinusoidalPosEmb(self.config.diffusion_step_embed_dim)(timestep)
-        cond = jp.reshape(global_cond, (global_cond.shape[0], -1))
-        cond = jp.concatenate([cond, time_emb], axis=-1)
-        cond = Mlp(
-            (self.config.diffusion_step_embed_dim,),
+        time_embedding = SinusoidalPosEmb(
             self.config.diffusion_step_embed_dim,
-            name="cond_encoder",
-        )(cond)
-        cond = jp.repeat(cond[:, None, :], sample.shape[1], axis=1)
-        x = jp.concatenate([sample, cond], axis=-1)
-        return Mlp(
-            tuple(self.config.down_dims),
+            name="diffusion_pos_emb",
+        )(timestep)
+        time_embedding = nn.Dense(
+            4 * self.config.diffusion_step_embed_dim,
+            name="diffusion_dense_0",
+        )(time_embedding)
+        time_embedding = mish(time_embedding)
+        time_embedding = nn.Dense(
+            self.config.diffusion_step_embed_dim,
+            name="diffusion_dense_1",
+        )(time_embedding)
+        observation_condition = jp.reshape(
+            global_cond,
+            (global_cond.shape[0], -1),
+        )
+        condition = jp.concatenate(
+            [time_embedding, observation_condition],
+            axis=-1,
+        )
+
+        x = sample
+        hidden: list[jax.Array] = []
+        for index, features in enumerate(self.config.down_dims):
+            x = ConditionalResidualBlock1D(
+                features,
+                self.config.kernel_size,
+                self.config.n_groups,
+                name=f"down_{index}_res_0",
+            )(x, condition)
+            x = ConditionalResidualBlock1D(
+                features,
+                self.config.kernel_size,
+                self.config.n_groups,
+                name=f"down_{index}_res_1",
+            )(x, condition)
+            hidden.append(x)
+            if index < len(self.config.down_dims) - 1:
+                x = Downsample1d(
+                    features,
+                    name=f"down_{index}_sample",
+                )(x)
+
+        for index in range(2):
+            x = ConditionalResidualBlock1D(
+                self.config.down_dims[-1],
+                self.config.kernel_size,
+                self.config.n_groups,
+                name=f"mid_{index}",
+            )(x, condition)
+
+        for index, features in enumerate(reversed(self.config.down_dims[:-1])):
+            x = jp.concatenate([x, hidden.pop()], axis=-1)
+            x = ConditionalResidualBlock1D(
+                features,
+                self.config.kernel_size,
+                self.config.n_groups,
+                name=f"up_{index}_res_0",
+            )(x, condition)
+            x = ConditionalResidualBlock1D(
+                features,
+                self.config.kernel_size,
+                self.config.n_groups,
+                name=f"up_{index}_res_1",
+            )(x, condition)
+            x = Upsample1d(features, name=f"up_{index}_sample")(x)
+
+        x = Conv1dBlock(
+            self.config.down_dims[0],
+            self.config.kernel_size,
+            self.config.n_groups,
+            name="final_block",
+        )(x)
+        return nn.Conv(
             self.a_dim,
-            name="denoiser",
+            kernel_size=(1,),
+            padding="VALID",
+            name="final_conv",
         )(x)
 
 
@@ -181,17 +376,17 @@ class EMAModel:
 
     def __init__(self, params: Any, power: float = 0.75):
         self.power = power
-        self.shadow_params = copy.deepcopy(jax.device_get(params))
+        self.shadow_params = jax.tree.map(jp.asarray, params)
 
     def update(self, params: Any) -> None:
-        self.shadow_params = jax.tree_util.tree_map(
+        self.shadow_params = jax.tree.map(
             lambda shadow, current: self.power * shadow + (1.0 - self.power) * current,
             self.shadow_params,
-            jax.device_get(params),
+            params,
         )
 
     def copy_to(self) -> Any:
-        return copy.deepcopy(self.shadow_params)
+        return copy.deepcopy(jax.device_get(self.shadow_params))
 
 
 class DiffusionPolicy:
@@ -238,8 +433,9 @@ class DiffusionPolicy:
             jp.zeros((1, self.config.obs_horizon, o_dim), dtype=jp.float32),
         )
         self.params = variables["params"]
+        schedule = _learning_rate_schedule(self.config)
         self.optimizer = optax.adamw(
-            learning_rate=self.config.learning_rate,
+            learning_rate=schedule,
             weight_decay=self.config.weight_decay,
         )
         self.ema = EMAModel(self.params, power=self.config.ema_power)
@@ -250,11 +446,8 @@ class DiffusionPolicy:
 
     @property
     def betas(self) -> jax.Array:
-        return jp.linspace(
-            self.config.beta_start,
-            self.config.beta_end,
+        return squaredcos_cap_v2_betas(
             self.config.num_diffusion_iters,
-            dtype=jp.float32,
         )
 
     @property
@@ -281,10 +474,11 @@ class DiffusionPolicy:
             maxval=self.config.num_diffusion_iters,
         )
         noise = jax.random.normal(rng_noise, actions.shape)
-        alpha = self.alphas_cumprod[timesteps]
-        noisy_actions = (
-            jp.sqrt(alpha)[:, None, None] * actions
-            + jp.sqrt(1.0 - alpha)[:, None, None] * noise
+        noisy_actions = add_noise(
+            actions,
+            noise,
+            timesteps,
+            self.alphas_cumprod,
         )
         pred = self.model.apply({"params": params}, noisy_actions, timesteps, obs)
         return jp.mean(jp.square(pred - noise))
@@ -300,14 +494,23 @@ class DiffusionPolicy:
         """Sample an action plan in one compiled denoising program."""
 
         batch_size = obs.shape[0]
+        rng, initial_noise_key = jax.random.split(rng)
         actions = jax.random.normal(
-            rng,
+            initial_noise_key,
             (batch_size, self.config.pred_horizon, self.a_dim),
         )
         alphas_cumprod = self.alphas_cumprod
+        timesteps = inference_timesteps(
+            self.config.num_diffusion_iters,
+            num_steps,
+        )
+        step_ratio = self.config.num_diffusion_iters // num_steps
 
-        def denoise(index: int, current_actions: jax.Array) -> jax.Array:
-            timestep = num_steps - index - 1
+        def denoise(
+            carry: tuple[jax.Array, jax.Array],
+            timestep: jax.Array,
+        ) -> tuple[tuple[jax.Array, jax.Array], None]:
+            current_actions, current_rng = carry
             timesteps = jp.full((batch_size,), timestep, dtype=jp.int32)
             pred_noise = self.model.apply(
                 {"params": params},
@@ -315,12 +518,28 @@ class DiffusionPolicy:
                 timesteps,
                 obs,
             )
-            alpha = alphas_cumprod[timestep]
-            return (current_actions - jp.sqrt(1.0 - alpha) * pred_noise) / jp.sqrt(
-                alpha
+            current_rng, noise_key = jax.random.split(current_rng)
+            noise = jax.random.normal(
+                noise_key,
+                current_actions.shape,
+                dtype=current_actions.dtype,
             )
+            previous_actions = ddpm_step(
+                pred_noise,
+                timestep,
+                current_actions,
+                alphas_cumprod,
+                noise,
+                previous_timestep=timestep - step_ratio,
+                prediction_type=self.config.prediction_type,
+                clip_sample=self.config.clip_sample,
+                clip_sample_range=self.config.clip_sample_range,
+                variance_type=self.config.variance_type,
+            )
+            return (previous_actions, current_rng), None
 
-        return jax.lax.fori_loop(0, num_steps, denoise, actions)
+        (actions, _), _ = jax.lax.scan(denoise, (actions, rng), timesteps)
+        return actions
 
     def act(
         self,
@@ -334,18 +553,18 @@ class DiffusionPolicy:
         output_domain: str | None = None,
     ) -> jax.Array:
         rng = self.rng if rng is None else rng
-        variables = {"params": self.params if params is None else params}
+        sampling_params = self.ema.shadow_params if params is None else params
         obs = self._as_obs_array(observations)
         if self.stats is not None and normalize_obs is not False:
             obs = self._minmax_scale(obs, self.stats["obs"], inverse=False)
         steps = self.config.num_diffusion_iters if num_steps is None else num_steps
-        if not 0 <= steps <= self.config.num_diffusion_iters:
+        if not 1 <= steps <= self.config.num_diffusion_iters:
             raise ValueError(
-                "num_steps must be between 0 and configured num_diffusion_iters"
+                "num_steps must be between 1 and configured num_diffusion_iters"
             )
         actions = jp.clip(
             self._sample_actions_jit(
-                variables["params"],
+                sampling_params,
                 obs,
                 rng,
                 num_steps=steps,
@@ -373,6 +592,8 @@ class DiffusionPolicy:
 
     def state_dict(self) -> dict[str, Any]:
         return {
+            "checkpoint_version": 2,
+            "architecture": "conditional_unet1d",
             "config": self.config.to_dict(),
             "a_dim": self.a_dim,
             "o_dim": self.o_dim,
@@ -406,6 +627,11 @@ class DiffusionPolicy:
     ) -> DiffusionPolicy:
         with Path(path).open("rb") as file:
             checkpoint = pickle.load(file)
+        if checkpoint.get("architecture") != "conditional_unet1d":
+            raise ValueError(
+                "This checkpoint predates the temporal JAX U-Net and is not "
+                "architecture-compatible; retrain it with the current implementation."
+            )
         normalization = checkpoint.get("normalization")
         policy = cls(
             a_dim=checkpoint["a_dim"],
@@ -420,6 +646,16 @@ class DiffusionPolicy:
         policy.params = checkpoint["params"]
         policy.ema.shadow_params = checkpoint.get("ema_params", policy.params)
         return policy
+
+    def set_training_result(
+        self,
+        params: Any,
+        *,
+        ema_params: Any | None = None,
+    ) -> None:
+        """Install online and EMA parameters returned by a trainer."""
+        self.params = params
+        self.ema.shadow_params = params if ema_params is None else ema_params
 
     def set_stats(self, stats: Mapping[str, Any]) -> None:
         """Attach validated training-split observation statistics.

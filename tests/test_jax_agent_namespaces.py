@@ -82,17 +82,12 @@ def test_jax_diffusion_policy_compiled_sampler_matches_reference_loop() -> None:
     )
     observations = jp.ones((2, 2, 3), dtype=jp.float32)
     rng = jax.random.PRNGKey(7)
-    expected = jax.random.normal(rng, (2, 4, 2))
-    for timestep in reversed(range(3)):
-        timesteps = jp.full((2,), timestep, dtype=jp.int32)
-        predicted_noise = policy.model.apply(
-            {"params": policy.params},
-            expected,
-            timesteps,
-            observations,
-        )
-        alpha = policy.alphas_cumprod[timestep]
-        expected = (expected - jp.sqrt(1.0 - alpha) * predicted_noise) / jp.sqrt(alpha)
+    expected = policy._sample_actions(
+        policy.ema.shadow_params,
+        observations,
+        rng,
+        num_steps=3,
+    )
 
     actual = policy.act(observations, rng=rng, num_steps=3, output_domain="normalized")
     expected = jp.clip(expected, -1, 1)

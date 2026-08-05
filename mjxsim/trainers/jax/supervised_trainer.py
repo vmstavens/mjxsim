@@ -123,7 +123,8 @@ class SupervisedTrainer:
     """Small JAX/Optax trainer for pure supervised loss functions.
 
     ``loss_fn`` should accept ``(params, batch)`` or ``(params, batch, rng)`` and
-    return a scalar loss. Batches may be any pytree of array-like values.
+    return a scalar loss. Batches may be any pytree of array-like values. When
+    ``ema_decay`` is set, the updated EMA tree is exposed as ``ema_params``.
     """
 
     def __init__(
@@ -137,6 +138,7 @@ class SupervisedTrainer:
         valid_loader: Iterable[Any] | None = None,
         rng: jax.Array | None = None,
         callback_fn: Callable[[int, float, float | None], None] | None = None,
+        ema_decay: float | None = None,
     ):
         self.config = _coerce_supervised_trainer_cfg(trainer_config)
         self.params = params
@@ -148,6 +150,10 @@ class SupervisedTrainer:
         self.rng = jax.random.PRNGKey(0) if rng is None else rng
         self._callback_fn = callback_fn
         self._loss_takes_rng = _loss_takes_rng(loss_fn)
+        if ema_decay is not None and not 0 <= ema_decay < 1:
+            raise ValueError("ema_decay must be in [0, 1) or None")
+        self.ema_decay = ema_decay
+        self.ema_params = jax.tree.map(jp.asarray, params)
         self.early_stopped = False
         self.best_epoch: int | None = None
         self.best_validation_loss: float | None = None
@@ -161,11 +167,19 @@ class SupervisedTrainer:
         return self.loss_fn(params, batch)
 
     def _make_train_step(self):
-        def train_step(params, opt_state, batch, rng):
+        def train_step(params, ema_params, opt_state, batch, rng):
             loss, grads = jax.value_and_grad(self._call_loss)(params, batch, rng)
             updates, opt_state = self.optimizer.update(grads, opt_state, params)
             params = optax.apply_updates(params, updates)
-            return params, opt_state, loss
+            if self.ema_decay is not None:
+                ema_params = jax.tree.map(
+                    lambda ema, current: (
+                        self.ema_decay * ema + (1 - self.ema_decay) * current
+                    ),
+                    ema_params,
+                    params,
+                )
+            return params, ema_params, opt_state, loss
 
         return jax.jit(train_step) if self.config.jit_compile else train_step
 
@@ -201,6 +215,7 @@ class SupervisedTrainer:
             raise ValueError("early stopping requires a valid_loader")
 
         best_params = None
+        best_ema_params = None
         stale_evaluations = 0
 
         for epoch in range(self.config.num_epochs):
@@ -213,8 +228,9 @@ class SupervisedTrainer:
 
             for batch in iterator:
                 self.rng, batch_rng = jax.random.split(self.rng)
-                self.params, self.opt_state, loss = self._train_step(
+                self.params, self.ema_params, self.opt_state, loss = self._train_step(
                     self.params,
+                    self.ema_params,
                     self.opt_state,
                     _tree_to_jax(batch),
                     batch_rng,
@@ -238,6 +254,7 @@ class SupervisedTrainer:
                     self.best_epoch = epoch
                     stale_evaluations = 0
                     best_params = copy.deepcopy(jax.device_get(self.params))
+                    best_ema_params = copy.deepcopy(jax.device_get(self.ema_params))
                 else:
                     stale_evaluations += 1
 
@@ -248,6 +265,7 @@ class SupervisedTrainer:
                     self.early_stopped = True
                     if self.config.restore_best_params and best_params is not None:
                         self.params = best_params
+                        self.ema_params = best_ema_params
                     if self._callback_fn:
                         self._callback_fn(epoch, avg_loss, val_loss)
                     break

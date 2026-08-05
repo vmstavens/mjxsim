@@ -13,6 +13,12 @@ from mjxsim.agents.jax.diffusion_policy_state import (
     DiffusionPolicy,
     EMAModel,
 )
+from mjxsim.agents.jax.ddpm import (
+    add_noise as ddpm_add_noise,
+    inference_timesteps as ddpm_inference_timesteps,
+    squaredcos_cap_v2_betas,
+    step as ddpm_step,
+)
 from mjxsim.agents.jax.drlr2_sac import (
     DRLR2,
     DRLR2_SAC_CFG,
@@ -60,6 +66,10 @@ __all__ = [
     "JaxDRLR2",
     "JaxDRLR2Config",
     "QCritic",
+    "ddpm_add_noise",
+    "ddpm_inference_timesteps",
+    "ddpm_step",
     "normalized_chain_adjacency",
+    "squaredcos_cap_v2_betas",
     "make_sac_models",
 ]

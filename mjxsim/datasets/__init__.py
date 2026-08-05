@@ -3,6 +3,10 @@
 from mjxsim.datasets.attractor import AttractorTrajectoryDataset
 from mjxsim.datasets.demonstration import DemonstrationDataset
 from mjxsim.datasets.pushert import PushTStateDataset, download_dataset
+from mjxsim.datasets.processed_sequences import (
+    ProcessedSequenceDataset,
+    iter_sequence_batches,
+)
 from mjxsim.datasets.state import StateDataset
 from mjxsim.datasets.vision import ImageStateDataset
 
@@ -11,6 +15,8 @@ __all__ = [
     "DemonstrationDataset",
     "ImageStateDataset",
     "PushTStateDataset",
+    "ProcessedSequenceDataset",
     "StateDataset",
     "download_dataset",
+    "iter_sequence_batches",
 ]

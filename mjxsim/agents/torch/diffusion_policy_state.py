@@ -648,7 +648,7 @@ class DiffusionPolicy(Agent):
         unnormalize_act: Optional[bool] = None,
         output_domain: str | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
-        """Generate actions using DDIM sampling
+        """Generate actions using DDPM sampling
 
         expected dimensions [num_envs, obs_horizon, o_dim]
 
