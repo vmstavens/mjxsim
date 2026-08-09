@@ -333,6 +333,11 @@ def benchmark_jax(
         "parameters": int(sum(x.size for x in jax.tree.leaves(params))),
         "first_training_step_seconds": first_step_seconds,
         "training_step_seconds": train_seconds,
+        "training_time_seconds": train_seconds * args.iterations,
+        "training_time_scope": (
+            f"{args.iterations} timed post-warmup optimizer steps; "
+            "excludes compilation and warmup"
+        ),
         "training_samples_per_second": args.batch_size / train_seconds,
         "first_inference_seconds": inference_first_seconds,
         "inference_seconds": inference_seconds,
@@ -490,6 +495,11 @@ def benchmark_torch(
         "parameters": int(sum(x.numel() for x in model.parameters())),
         "first_training_step_seconds": first_step_seconds,
         "training_step_seconds": train_seconds,
+        "training_time_seconds": train_seconds * args.iterations,
+        "training_time_scope": (
+            f"{args.iterations} timed post-warmup optimizer steps; "
+            "excludes compilation and warmup"
+        ),
         "training_samples_per_second": args.batch_size / train_seconds,
         "first_inference_seconds": inference_first_seconds,
         "inference_seconds": inference_seconds,

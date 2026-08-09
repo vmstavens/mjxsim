@@ -7,7 +7,7 @@ name = "mjxsim"
 version = "0.1.0"
 description = "Accelerator-first MuJoCo/Brax utilities and robot-learning agents"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.11,<3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Victor Melbye Staven" }]
 dependencies = [

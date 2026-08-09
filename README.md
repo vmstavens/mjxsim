@@ -5,7 +5,7 @@ agents, and Rapid Motor Adaptation (RMA) components for robot learning.
 
 ## Requirements
 
-- Python 3.12 or 3.13
+- Python 3.11
 - Linux with a CUDA 13-compatible NVIDIA setup
 - [`uv`](https://docs.astral.sh/uv/) is recommended
 
