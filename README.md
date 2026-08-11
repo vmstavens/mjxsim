@@ -6,12 +6,10 @@ agents, and Rapid Motor Adaptation (RMA) components for robot learning.
 ## Requirements
 
 - Python 3.11
-- Linux with a CUDA 13-compatible NVIDIA setup
 - [`uv`](https://docs.astral.sh/uv/) is recommended
 
-CUDA-enabled JAX and PyTorch packages are installed by default. This package is
-intentionally aimed at the accelerated systems used by its maintainers rather
-than at CPU-only or platform-neutral environments.
+The project dependencies do not pin a CUDA release. A normal sync installs the
+portable JAX and PyTorch distributions available for the current platform.
 
 ## Installation
 
@@ -28,6 +26,19 @@ git clone https://github.com/vmstavens/mjxsim.git
 cd mjxsim
 uv sync --dev
 ```
+
+For NVIDIA acceleration, install builds compatible with the machine after the
+initial sync. uv can detect the PyTorch backend from the installed driver:
+
+```bash
+uv pip install --torch-backend=auto torch torchvision
+```
+
+JAX currently requires choosing one of its published CUDA extras explicitly
+(for example, `jax[cuda12]` or `jax[cuda13]`). Consult the JAX installation
+guide for the extra supported by the installed NVIDIA driver. Because these
+commands customize the managed environment, use `uv run --no-sync` afterward;
+a later `uv sync` restores the portable dependencies from `uv.lock`.
 
 ## Public API
 
