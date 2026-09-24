@@ -1,0 +1,163 @@
+defaults:
+  - task: grasped_end_dlo_target_align_sparse_large
+  - observation: target_align_state48
+  - action: grasped_end_dlo_mocap_delta_stride3_realtime_v2
+  - dataset: align_processed_target_align_state48_spacemouse_large_stride3_v1
+  - il: diffusion_policy_drlr_family
+  - trainer: sequential
+  - runtime: gpu
+  - _self_
+
+stage: train_drlr_target_align_geometry_only_dp_rma_sparse
+seed: 0
+sweep_mode: rma_sparse_drlr_from_scratch
+
+trainer:
+  backend: brax_compiled
+
+task:
+  env:
+    impl: warp
+    warp_graph_mode: warp_staged
+    episode_length: 2000
+    sparse_reward: true
+    sparse_reward_scale: 100.0
+    sparse_step_reward: -0.01
+    sparse_terminal_penalty: 0.0
+    initial_curvature_randomization: false
+    # Keep the native alignment reset inside the reliable reset set.
+    reset_rot_min: [-0.5235987756, -0.5235987756, -0.5235987756]
+    reset_rot_max: [0.5235987756, 0.5235987756, 0.5235987756]
+
+il:
+  checkpoint: artifacts/models/diffusion_policy/align_target_align_state48_spacemouse_rot45_stiff10m_stride3_v1/final_model.pkl
+  teacher_observation: target_align_state48
+  obs_horizon: 2
+  pred_horizon: 8
+  action_horizon: 4
+  diffusion_step_embed_dim: 128
+  down_dims: [64, 128, 256]
+
+sweep:
+  reverse_dr_order: false
+  dr_levels: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+  start_dr_level: 5
+  skip_jobs: []
+  domain_randomization_family: rma_curriculum
+  # Expand curvature from straight at DR0 to 0--180 degrees at DR100.
+  # Cable length and pipe angle retain the standard RMA curriculum envelopes.
+  initial_curvature_curriculum:
+    theta_max: 3.1415926536
+    phi: [0.0, 6.2831853072]
+  # Hold every other physical parameter fixed. In particular, use the accepted
+  # stiff cable throughout the complete DR5--DR100 curriculum.
+  domain_randomization_overrides:
+    parameters:
+      pipe_inner_radius: [0.02, 0.02]
+      youngs_modulus: [10000000.0, 10000000.0]
+      shear_modulus: [10000000.0, 10000000.0]
+      thickness: [0.005, 0.005]
+      pipe_length: [0.10, 0.10]
+  # Keep all dynamics nominal; this sweep isolates reset geometry.
+  dynamics_parameter_curriculum:
+    cable_pipe_friction:
+      nominal: 0.3
+      range: [0.3, 0.3]
+    cable_linear_density:
+      nominal: 0.00875
+      range: [0.00875, 0.00875]
+    cable_bending_damping:
+      nominal: 0.01
+      range: [0.01, 0.01]
+  initial_parent_actors:
+    rma_sparse: null
+  initial_parent_actor_teacher_only: false
+  initial_parent_actor_initialize_student: true
+  initial_parent_actor_contract: native
+  # Tighten terminal alignment with DR progress: 2 cm and 10 degrees at DR0,
+  # reaching 1 mm and 1 degree at DR100.
+  success_tolerance_curriculum:
+    position_start: 0.02
+    position_end: 0.001
+    rotation_start: 0.17453292519943295
+    rotation_end: 0.017453292519943295
+  # Measurement noise is excluded from this geometry-only experiment.
+  sensor_noise: null
+  drlr2:
+    budget: {value: 100000000, unit: transitions}
+    num_envs: 128
+    log_interval_transitions: 100000
+    checkpoint_interval_transitions: 100000
+    warmup_vector_steps: 4000
+    warmup_chunk_vector_steps: 20
+    teacher_diffusion_steps: 4
+    learn_during_warmup: true
+    train_actor_during_warmup: false
+    memory_size: 1000000
+    batch_size: 512
+    gradient_steps: 4
+    discount_factor: 0.9995
+    polyak: 0.005
+    actor_learning_rate: 0.000025
+    critic_learning_rate: 0.0003
+    bellman_target_min: -15.0
+    bellman_target_max: 100.0
+    entropy_learning_rate: 0.0003
+    initial_action_std: 0.02
+    minimum_action_std: 0.005
+    maximum_action_std: 0.04
+    actor_hidden_sizes: [256, 256]
+    critic_hidden_sizes: [512, 512, 256, 256, 128]
+    decision_block: true
+    batch_il_queries: true
+    soft_update_beta: 0.2
+    action_ema_enabled: false
+    action_ema_alpha: 0.75
+    include_previous_ema_action: true
+    fused_train_chunk: true
+    decoupled_teacher_inference: false
+    bound_privileged_latent: false
+    observation_normalization_std_min: 0.001
+    freeze_observation_normalizer: true
+    same_state_candidate_selection: true
+    batch_mean_candidate_selection: false
+    require_both_critics_for_actor: true
+    persistent_reference_replay: true
+    full_stage_continuation: true
+    inherit_online_replay: false
+    reference_replay_fraction: 0.15
+    stage_reference_handoff:
+      enabled: true
+      episodes: 256
+      batch_size: 32
+      max_successful_episodes: 128
+      minimum_successful_episodes: 64
+      seed_start: 2026090400
+    critic_layer_norm: true
+    freeze_entropy_temperature: true
+    initial_entropy_temperature: 0.001
+    selection_conditioned_entropy_backup: true
+    evaluation_gate:
+      enabled: true
+      interval_transitions: 2000000
+      minimum_transitions: 2000000
+      episodes: 128
+      batch_size: 32
+      success_threshold: 0.90
+      consecutive_passes: 2
+      seed_start: 2026083000
+      require_acceptance: true
+      # Evaluate the inherited actor before its first SAC update and promote it
+      # immediately when it already clears the stage success threshold.
+      accept_warmup_actor: true
+
+runtime:
+  dry_run: true
+  console_metrics: false
+  jax_preallocate: false
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${runtime.runs_root}/${task.name}/${stage}/${now:%Y-%m-%d}/${now:%H-%M-%S}

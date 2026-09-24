@@ -1,0 +1,11 @@
+id: align_processed_target_align_state48_spacemouse_large_stride3_v1
+kind: processed
+path: ${runtime.data_root}/grasped_end_dlo_target_align_sparse/processed/align_processed_target_align_state48_spacemouse_large_stride3_v1
+manifest: ${.path}/manifest.json
+
+expected:
+  observation_dim: 48
+  action_dim: 6
+  control_dt: 0.002
+  sample_stride: 3
+  sample_dt: 0.006

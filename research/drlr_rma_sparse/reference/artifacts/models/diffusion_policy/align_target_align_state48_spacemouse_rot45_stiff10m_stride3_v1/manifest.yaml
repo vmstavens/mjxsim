@@ -1,0 +1,31 @@
+id: align_target_align_state48_spacemouse_rot45_stiff10m_stride3_v1
+type: diffusion_policy
+sha256: 02715e99d89e28d3b9aeffc1d0521bc32b4a49f28d14da6876b3e499f4da5084
+source_run: runs/grasped_end_dlo_target_align_sparse/train_dp/2026-09-03/22-04-42
+dataset: align_processed_target_align_state48_spacemouse_rot45_stiff10m_straight_50_stride3_v1
+observation: target_align_state48
+action: grasped_end_dlo_mocap_delta_stride3_realtime_v2
+obs_horizon: 2
+pred_horizon: 8
+action_horizon: 4
+diffusion_steps_trained: 100
+architecture:
+  diffusion_step_embed_dim: 128
+  down_dims: [64, 128, 256]
+fixed_geometry:
+  cable_length: 0.30
+  cable_youngs_modulus: 10000000.0
+  cable_shear_modulus: 10000000.0
+  initial_curvature: 0.0
+accepted_evaluation:
+  source_run: runs/grasped_end_dlo_target_align_sparse/evaluate/2026-09-03/22-18-04
+  episodes: 1000
+  successes: 694
+  success_rate: 0.694
+  max_steps: 2000
+  batch_size: 128
+  diffusion_steps: 4
+  reset_position_min: [-0.20, -0.1218, -0.20]
+  reset_position_max: [0.20, 0.2782, 0.20]
+  reset_rotation_min: [-0.7853981634, -0.7853981634, -0.7853981634]
+  reset_rotation_max: [0.7853981634, 0.7853981634, 0.7853981634]

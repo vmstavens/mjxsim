@@ -1,0 +1,7 @@
+id: grasped_end_dlo_mocap_delta_stride3_realtime_v2
+low: [-0.001, -0.001, -0.001, -0.01, -0.01, -0.01]
+high: [0.001, 0.001, 0.001, 0.01, 0.01, 0.01]
+units: [m, m, m, rad, rad, rad]
+control_dt: 0.002
+subsample_stride: 3
+accumulation: se3_compose_then_clip

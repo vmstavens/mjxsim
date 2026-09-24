@@ -1,0 +1,13 @@
+name: rma_curriculum_100
+enabled: true
+parameters:
+  pipe_inner_radius: [0.01, 0.02]
+  length: [0.15, 0.35]
+  youngs_modulus: [500000, 2000000]
+  shear_modulus: [500000, 2333333.3333333335]
+  thickness: [0.004, 0.0082]
+  pipe_length: [0.1, 0.13]
+pipe_angle_offset: [-1.5707963267948966, 0.0]
+initial_curvature_randomization: true
+curvature_theta: [0.7853981633974483, 1.0471975511965976]
+curvature_phi: [0.0, 6.283185307179586]

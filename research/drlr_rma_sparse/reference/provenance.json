@@ -1,0 +1,39 @@
+{
+  "lab_commit": "711c5b51e25dc6931e36efc77dacd1a4b2ab4a01",
+  "mjxsim_commit": "6105fa752210e9e06273314d82248d36a8dbdf25",
+  "description": "Working-tree snapshots; full source/assets exported separately.",
+  "files": [
+    {
+      "source": "configs/train_drlr_target_align_geometry_only_dp_rma_sparse.yaml",
+      "sha256": "6c0c0a9aa48618f3f32f5453c07dd7bfef8c87a95c10768c2b204cdcb0b8c923"
+    },
+    {
+      "source": "configs/train_drlr_rma_sparse_sweep.yaml",
+      "sha256": "734985d3ef96fb91cc320029aa6577ce108bbaaf18a4fb1983c5e70ff3ae81e2"
+    },
+    {
+      "source": "configs/train_drlr_rma_continuous.yaml",
+      "sha256": "ce68f829fbe8491cf7cc41810af926a06a66639e754f938da543742b52ca5b5c"
+    },
+    {
+      "source": "configs/action/grasped_end_dlo_mocap_delta_stride3_realtime_v2.yaml",
+      "sha256": "5e66ee141011810b5451dd995dcb955a5fd3bfe90d6ddf7b46ec9a19552c0670"
+    },
+    {
+      "source": "configs/observation/target_align_state48.yaml",
+      "sha256": "b8e6656fc3e126b1c35e8eecc603ee6edb96ef0ca4abb33a363325216a7ef45b"
+    },
+    {
+      "source": "configs/dataset/align_processed_target_align_state48_spacemouse_large_stride3_v1.yaml",
+      "sha256": "ea76a873d51dcfcbc5b5794162b5c3d6eea503f0de95b281f31d64c528a1b396"
+    },
+    {
+      "source": "configs/domain_randomization/rma_curriculum_100.yaml",
+      "sha256": "6e9b8be40b72de96557b2d5352f44f6ea1dc36637ad78d8e0197569f2b2acd79"
+    },
+    {
+      "source": "artifacts/models/diffusion_policy/align_target_align_state48_spacemouse_rot45_stiff10m_stride3_v1/manifest.yaml",
+      "sha256": "b311655b50c8322fe1ae292eeecb82c6a611e565141f4ad2d20281724aa36148"
+    }
+  ]
+}

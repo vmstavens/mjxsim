@@ -1,0 +1,10 @@
+name: target_align_state48
+dimension: 48
+frame: target_align
+legacy_teacher_observation: full_state60
+legacy_teacher_pipe_length: 0.125
+legacy_teacher_include_previous_action: true
+legacy_teacher_native_observation: true
+legacy_dataset_observation: full_state60
+legacy_dataset_dimension: 60
+legacy_dataset_pipe_length: 0.125

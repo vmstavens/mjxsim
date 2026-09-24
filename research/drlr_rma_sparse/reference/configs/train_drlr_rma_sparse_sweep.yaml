@@ -1,0 +1,131 @@
+defaults:
+  - task: grasped_end_dlo_insert
+  - observation: target_align_state48
+  - action: grasped_end_dlo_mocap_delta_stride3_realtime_v2
+  - dataset: insert_processed_full_state60_spacemouse_wide_stride3_v1
+  - il: diffusion_policy_drlr_family
+  - trainer: sequential
+  - runtime: gpu
+  - _self_
+
+stage: train_drlr_rma_sparse_sweep
+seed: 0
+sweep_mode: rma_sparse_drlr
+
+trainer:
+  backend: brax_compiled
+
+task:
+  env:
+    impl: warp
+    warp_graph_mode: warp_staged
+    episode_length: 1500
+    sparse_reward: true
+    sparse_reward_scale: 100.0
+    sparse_step_reward: -0.01
+    sparse_terminal_penalty: 0.0
+    initial_curvature_randomization: false
+
+il:
+  checkpoint: artifacts/models/diffusion_policy/insert_full_state60_stride3_drlr_v1/final_model.pkl
+
+sweep:
+  reverse_dr_order: false
+  # Override with arbitrary increasing integer percentages, e.g. [17, 19].
+  dr_levels: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+  # Override to resume a chain from a known accepted parent, e.g. 40 with RL35.
+  start_dr_level: 5
+  skip_jobs: []
+  domain_randomization_family: rma_curriculum
+  # Set this to the accepted actor-only RMA DR0 proof checkpoint before
+  # launching. DR10 and later stages inherit the preceding RMA actor normally.
+  initial_parent_actors:
+    rma_sparse: runs/grasped_end_dlo_insert/train_drlr_rma_sparse_binary_proof/2026-08-28/target_align_rl0_dp_matched/jobs/drlr2_rma_sparse_binary_dr000_seed0/checkpoints/actor_000628728.flax
+  # The accepted target-align DR0 initializes DR5 and is its DRLR reference.
+  # Each accepted stage then initializes and guides the following stage.
+  initial_parent_actor_teacher_only: false
+  # Full-DR sensor-error targets. Each staged job scales these linearly by its
+  # DR percentage; the target-align privileged 14-D factors remain noise-free.
+  sensor_noise:
+    enabled: true
+    cable_position_rms: 0.01
+    direction_angle_rms: 0.08726646259971647
+    tcp_position_rms: 0.0005
+    tcp_rotation_rms: 0.004363323129985824
+    pipe_position_rms: 0.001
+    pipe_rotation_rms: 0.008726646259971648
+  drlr2:
+    budget: {value: 100000000, unit: transitions}
+    num_envs: 64
+    log_interval_transitions: 1000
+    checkpoint_interval_transitions: 100000
+    warmup_vector_steps: 15000
+    warmup_chunk_vector_steps: 20
+    teacher_diffusion_steps: 4
+    memory_size: 2000000
+    batch_size: 512
+    gradient_steps: 1
+    discount_factor: 0.9995
+    polyak: 0.005
+    actor_learning_rate: 0.0003
+    critic_learning_rate: 0.0003
+    # Feasible discounted-return envelope for +100 success / -0.01 per step.
+    bellman_target_min: -15.0
+    bellman_target_max: 100.0
+    entropy_learning_rate: 0.0003
+    # Must match the accepted target-align RL0 checkpoint's bounded stochastic
+    # action head; changing these produces incompatible Flax parameter trees.
+    initial_action_std: 0.05
+    minimum_action_std: 0.005
+    maximum_action_std: 0.1
+    actor_hidden_sizes: [512, 512]
+    critic_hidden_sizes: [512, 512, 256, 256, 128]
+    decision_block: true
+    batch_il_queries: true
+    soft_update_beta: 0.2
+    action_ema_enabled: true
+    action_ema_alpha: 0.75
+    include_previous_ema_action: true
+    # Parent references are lightweight RMA MLPs, so later stages can compile
+    # reference inference, environment stepping, and SAC updates together.
+    fused_train_chunk: true
+    bound_privileged_latent: false
+    # The target-align state omits the static target-frame pose block. Keep a
+    # small numerical floor and expose floor usage through diagnostics.
+    observation_normalization_std_min: 0.001
+    same_state_candidate_selection: true
+    require_both_critics_for_actor: true
+    # After a stage passes the held-out gate, export successful deterministic
+    # rollouts from that actor. The following DR stage replaces the original
+    # demonstration replay with this curriculum-local expert replay and mixes
+    # it with its ordinary online buffer.
+    persistent_reference_replay: true
+    reference_replay_fraction: 0.30
+    curriculum_reference_collection:
+      enabled: true
+      episodes: 256
+      batch_size: 32
+      seed_start: 2026090400
+    # Opt-in HIL-SERL-style rescue. Enable with
+    # sweep.drlr2.hil_serl.enabled=true.
+    hil_serl:
+      enabled: false
+      window_updates: 200
+      enter_above: 0.10
+      exit_below: 0.05
+      start_after_gradient_updates: 10000
+      require_full_window: true
+      minimum_reference_transitions: 100000
+      minimum_completed_reference_episodes: 64
+      cooldown_transitions: 100000
+
+runtime:
+  dry_run: true
+  console_metrics: false
+  jax_preallocate: false
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${runtime.runs_root}/${task.name}/${stage}/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -98,6 +98,12 @@ examples.
   update work can be staged with JAX without changing an existing agent's
   semantics implicitly.
 
+## Research references
+
+See the [sparse DRLR(DP) + RMA reproduction package](research/drlr_rma_sparse/README.md)
+for the curriculum contract, machine setup, reference configs, transfer tooling,
+and remaining library promotion work.
+
 ## Development
 
 ```bash

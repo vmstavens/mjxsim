@@ -1,0 +1,66 @@
+defaults:
+  - task: grasped_end_dlo_insert
+  - observation: full_state60
+  - action: grasped_end_dlo_mocap_delta_stride3_realtime_v2
+  - dataset: insert_processed_full_state60_spacemouse_wide_stride3_v1
+  - il: diffusion_policy_drlr_family
+  - domain_randomization: rma_curriculum_100
+  - trainer: sequential
+  - runtime: gpu
+  - _self_
+
+stage: train_drlr_rma_continuous
+seed: 0
+timestamp: true
+
+task:
+  env:
+    impl: warp
+    warp_graph_mode: warp_staged
+    episode_length: 1500
+    sparse_reward: true
+    sparse_step_reward: -0.01
+    initial_curvature_randomization: false
+
+il:
+  checkpoint: artifacts/models/diffusion_policy/insert_full_state60_stride3_drlr_v1/final_model.pkl
+
+trainer:
+  backend: brax_compiled
+
+drlr2:
+  # Same total transitions as the twenty legacy 100M stages, but one optimizer,
+  # one replay buffer, one RMA policy, and one fixed DP teacher.
+  budget: {value: 2000000000, unit: transitions}
+  num_envs: 64
+  log_interval_transitions: 1000
+  warmup_vector_steps: 15000
+  warmup_chunk_vector_steps: 20
+  teacher_diffusion_steps: 4
+  memory_size: 2000000
+  batch_size: 256
+  gradient_steps: 1
+  discount_factor: 0.9995
+  polyak: 0.005
+  actor_learning_rate: 0.0003
+  critic_learning_rate: 0.0003
+  entropy_learning_rate: 0.0003
+  actor_hidden_sizes: [256, 256]
+  critic_hidden_sizes: [512, 512, 256, 256, 128]
+  decision_block: true
+  batch_il_queries: true
+  soft_update_beta: 0.2
+  action_ema_enabled: true
+  action_ema_alpha: 0.75
+  nominal_warmup_fraction: 0.0
+
+runtime:
+  dry_run: true
+  console_metrics: false
+  jax_preallocate: false
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${runtime.runs_root}/${task.name}/${stage}/${overnight_run_leaf:${timestamp},${now:%Y-%m-%d},${now:%H-%M-%S}}
